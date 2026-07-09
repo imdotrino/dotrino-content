@@ -1,0 +1,20 @@
+{
+  "name": "dotrino-content",
+  "version": "0.1.0",
+  "description": "Nodo de contenido del ecosistema Dotrino: guarda y sirve media pesada por cid (hash de contenido), autohospedado por el usuario. Fase 1: core local (localhost).",
+  "type": "module",
+  "bin": {
+    "dotrino-content": "bin/cli.js"
+  },
+  "exports": {
+    ".": "./src/index.js"
+  },
+  "scripts": {
+    "start": "node bin/cli.js start",
+    "test": "node --test 'test/**/*.test.js'"
+  },
+  "engines": {
+    "node": ">=22.5"
+  },
+  "license": "MIT"
+}
