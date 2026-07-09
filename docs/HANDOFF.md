@@ -89,8 +89,11 @@ más smoke test manual con `curl`):
   (`sha256-<hex>`; BLAKE3 requeriría módulo nativo y el `.npmrc` bloquea build
   scripts — el prefijo de algoritmo deja la puerta abierta), índice **SQLite**
   (no el store; el store queda para el índice sincronizable en fases futuras).
-- Pendiente de Fase 1: crear el repo `imdotrino/dotrino-content` y push (no
-  hecho aún; el directorio no es repo git).
+- **Repo + landing publicados (2026-07-09):** repo `imdotrino/dotrino-content`
+  (push por alias SSH `dotrino`), landing estática §1.2 en `web/` desplegada por
+  Actions a **`content.dotrino.com`** (Pages `build_type=workflow`, cname fijado
+  al final; sirve 200 con SEO/OG/GoatCounter/bilingüe/support). App registrada
+  en el catálogo de `dotrino-home` (`cat: 'developers'`, `wip: true`).
 
 **Siguiente: Fase 2 — auth por vault:** enrolamiento tipo `dotrino-terminal`
 (pair → device cert → `verifyChain` → revoke; ver `dotrino-terminal/agent/`),
