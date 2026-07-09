@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <!-- dotrino-content: tu media, servida desde tu propio equipo -->
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#123a34"/>
+      <stop offset="1" stop-color="#0b1520"/>
+    </linearGradient>
+    <linearGradient id="ac" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#4fe3c1"/>
+      <stop offset="1" stop-color="#2aa88c"/>
+    </linearGradient>
+  </defs>
+  <rect width="512" height="512" rx="112" fill="url(#bg)"/>
+  <!-- pila de "discos" (tu servidor de contenido) -->
+  <g stroke="url(#ac)" stroke-width="26" fill="none" stroke-linecap="round">
+    <ellipse cx="256" cy="168" rx="130" ry="46"/>
+    <path d="M126 168v88c0 25.4 58.2 46 130 46s130-20.6 130-46v-88"/>
+    <path d="M126 256v88c0 25.4 58.2 46 130 46s130-20.6 130-46v-88"/>
+  </g>
+  <!-- play: media que se reproduce -->
+  <path d="M225 288l76 44-76 44z" fill="#4fe3c1" stroke="#0b1520" stroke-width="14" stroke-linejoin="round" transform="translate(0 -34)"/>
+</svg>

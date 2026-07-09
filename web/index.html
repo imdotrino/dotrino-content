@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="theme-color" content="#0b1520">
+<link rel="icon" type="image/svg+xml" href="icon.svg">
+<title>Content — comparte fotos y videos desde tu propia computadora | Dotrino</title>
+<meta name="description" content="Guarda y comparte fotos, videos y archivos pesados desde tu propia computadora, sin subirlos a la nube de nadie. Tus enlaces, tus reglas: cifrado, sin anuncios y sin rastreo. En desarrollo." />
+<link rel="canonical" href="https://content.dotrino.com/" />
+<meta property="og:type" content="website" />
+<meta property="og:locale" content="es_ES" />
+<meta property="og:locale:alternate" content="en_US" />
+<meta property="og:site_name" content="Dotrino" />
+<meta property="og:title" content="Content — comparte fotos y videos desde tu propia computadora" />
+<meta property="og:description" content="Guarda y comparte media pesada desde tu propio equipo, sin nubes de terceros. Cifrado, sin anuncios y sin rastreo. En desarrollo." />
+<meta property="og:url" content="https://content.dotrino.com/" />
+<meta property="og:image" content="https://content.dotrino.com/og.jpg" />
+<meta property="og:image:width" content="1200" />
+<meta property="og:image:height" content="630" />
+<meta name="twitter:card" content="summary_large_image" />
+<meta name="twitter:title" content="Content — comparte fotos y videos desde tu propia computadora" />
+<meta name="twitter:description" content="Guarda y comparte media pesada desde tu propio equipo, sin nubes de terceros. Cifrado, sin anuncios y sin rastreo. En desarrollo." />
+<meta name="twitter:image" content="https://content.dotrino.com/og.jpg" />
+<!-- Analítica cookieless autohosteada (GoatCounter); no cuenta en localhost/LAN. -->
+<script>window.goatcounter={path:function(p){return location.hostname+p}}</script>
+<script data-goatcounter="https://goat.dotrino.com/count" async src="https://goat.dotrino.com/count.js"></script>
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "DeveloperApplication",
+  "name": "Dotrino Content",
+  "url": "https://content.dotrino.com/",
+  "description": "Nodo de contenido autohospedado: guarda y comparte fotos, videos y archivos pesados desde tu propia computadora, con enlaces cifrados, sin nubes de terceros ni rastreo.",
+  "applicationCategory": "DeveloperApplication",
+  "operatingSystem": "Linux, macOS, Windows",
+  "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
+  "publisher": { "@type": "Organization", "name": "Dotrino", "url": "https://dotrino.com/" }
+}
+</script>
+<style>
+  :root {
+    --ac: #4fe3c1;
+    --bg: #0b1520;
+    --panel: #10202b;
+    --ink: #e8f4f0;
+    --muted: #93b3ab;
+    --line: #1e3a41;
+    --code-bg: #081018;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    background: var(--bg); color: var(--ink);
+    font: 16px/1.6 system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+    -webkit-text-size-adjust: 100%;
+  }
+  a { color: var(--ac); }
+  .wrap { max-width: 820px; margin: 0 auto; padding: 24px 20px 96px; }
+  /* Topbar estándar Dotrino (§5): marca izquierda, acciones derecha (idioma + moneda). */
+  .topbar {
+    display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: .6rem;
+    padding: .7rem clamp(14px, 4vw, 22px); padding-top: calc(.7rem + env(safe-area-inset-top));
+    background: rgba(16, 32, 43, .85); backdrop-filter: blur(8px);
+    border-bottom: 1px solid var(--line); position: sticky; top: 0; z-index: 10;
+  }
+  .brand { display: flex; align-items: center; gap: 8px; color: var(--ink); text-decoration: none; font-weight: 700; }
+  .brand img { width: 28px; height: 28px; border-radius: 8px; }
+  .actions { display: flex; align-items: center; gap: 10px; }
+  .lang { display: flex; gap: 6px; }
+  .lang button {
+    background: none; border: 1px solid var(--line); color: var(--muted);
+    border-radius: 8px; padding: 4px 10px; cursor: pointer; font: inherit; font-size: 14px;
+  }
+  .lang button.on { color: var(--ink); border-color: var(--ac); }
+  /* Móvil: la marca se queda a la izquierda y las acciones bajan a una segunda fila. */
+  @media (max-width: 560px) { .topbar .actions { flex-basis: 100%; justify-content: flex-end; } }
+
+  .hero { text-align: center; padding: 32px 0 8px; }
+  .logo { width: 88px; height: 88px; border-radius: 22px; }
+  h1 { font-size: clamp(28px, 6vw, 40px); margin: 16px 0 6px; }
+  .tagline { color: var(--muted); font-size: 18px; margin: 0 auto; max-width: 46ch; }
+  .badge {
+    display: inline-block; margin-top: 14px; padding: 4px 12px; border-radius: 999px;
+    border: 1px solid var(--ac); color: var(--ac); font-size: 13px; font-weight: 600;
+  }
+  h2 { font-size: 22px; margin: 40px 0 12px; }
+  p { margin: 12px 0; }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 16px; padding: 18px 20px; margin: 14px 0; }
+  ol, ul { margin: 12px 0; padding-left: 22px; }
+  li { margin: 6px 0; }
+  code { background: var(--code-bg); padding: 2px 6px; border-radius: 6px; font-size: 0.92em; }
+  pre {
+    background: var(--code-bg); border: 1px solid var(--line); border-radius: 12px;
+    padding: 14px 16px; overflow-x: auto; font-size: 14px;
+  }
+  pre code { background: none; padding: 0; }
+  .cta { display: inline-block; margin: 6px 8px 6px 0; padding: 10px 18px; border-radius: 10px; background: var(--ac); color: #06231c; text-decoration: none; font-weight: 600; }
+  .cta.ghost { background: none; border: 1px solid var(--line); color: var(--ink); }
+  footer { text-align: center; color: var(--muted); font-size: 14px; margin-top: 48px; }
+  [data-lang="en"] { display: none; }
+  html[lang="en"] [data-lang="es"] { display: none; }
+  html[lang="en"] [data-lang="en"] { display: revert; }
+</style>
+</head>
+<body>
+<header class="topbar">
+  <a class="brand" href="./">
+    <img src="icon.svg" alt="" width="28" height="28" onerror="this.style.display='none'">
+    <span>Content</span>
+  </a>
+  <div class="actions">
+    <div class="lang" role="group" aria-label="es / en">
+      <button id="lang-es" class="on" onclick="setLang('es')">ES</button>
+      <button id="lang-en" onclick="setLang('en')">EN</button>
+    </div>
+    <dotrino-support href="https://ko-fi.com/dotrino" repo="imdotrino/dotrino-content" discord="https://discord.gg/D648uq7cth"></dotrino-support>
+  </div>
+</header>
+
+<div class="wrap">
+  <div class="hero">
+    <img class="logo" src="icon.svg" alt="Dotrino Content" onerror="this.style.display='none'">
+    <h1>Content</h1>
+    <p class="tagline" data-lang="es">Guarda y comparte fotos, videos y archivos pesados desde <b>tu propia computadora</b> — sin subirlos a la nube de nadie.</p>
+    <p class="tagline" data-lang="en">Store and share photos, videos and large files from <b>your own computer</b> — without uploading them to anyone's cloud.</p>
+    <span class="badge" data-lang="es">🚧 En desarrollo</span>
+    <span class="badge" data-lang="en">🚧 In development</span>
+  </div>
+
+  <!-- Qué es -->
+  <section>
+    <div data-lang="es">
+      <div class="card">
+        <p>Cuando compartes un video hoy, se lo entregas a la nube de una empresa: ellos lo guardan, lo analizan y deciden sus reglas. <b>Content</b> le da la vuelta: el archivo <b>se queda en tu equipo</b> y tú entregas solo un <b>enlace</b>. Quien lo abre, lo recibe directo de ti.</p>
+        <ul>
+          <li><b>Tu archivo, en tu equipo.</b> Nunca pasa por un servidor de Dotrino.</li>
+          <li><b>Enlaces con candado.</b> El contenido viaja cifrado; solo quien tiene el enlace puede verlo. Ni siquiera el que lo transporta puede mirarlo.</li>
+          <li><b>Sin anuncios, sin cookies, sin rastreo.</b> Como todo en Dotrino.</li>
+        </ul>
+      </div>
+    </div>
+    <div data-lang="en">
+      <div class="card">
+        <p>When you share a video today, you hand it to some company's cloud: they store it, scan it and set the rules. <b>Content</b> flips that: the file <b>stays on your machine</b> and you hand out only a <b>link</b>. Whoever opens it gets it straight from you.</p>
+        <ul>
+          <li><b>Your file, on your machine.</b> It never touches a Dotrino server.</li>
+          <li><b>Locked links.</b> Content travels encrypted; only someone with the link can see it. Not even the carrier can peek.</li>
+          <li><b>No ads, no cookies, no tracking.</b> Like everything in Dotrino.</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <!-- Estado -->
+  <section>
+    <h2 data-lang="es">Estado del proyecto</h2>
+    <h2 data-lang="en">Project status</h2>
+    <p data-lang="es">Está <b>en construcción</b>. Hoy existe el núcleo: un programa que guarda tus archivos en tu equipo y los sirve en tu propia máquina (aún no comparte hacia internet). Lo que viene: enlazarlo a tu identidad Dotrino y compartir de equipo a equipo.</p>
+    <p data-lang="en">It is <b>under construction</b>. The core exists today: a program that stores your files on your machine and serves them locally (it doesn't share to the internet yet). Next up: linking it to your Dotrino identity and sharing device to device.</p>
+  </section>
+
+  <!-- Probar (técnico) -->
+  <section>
+    <h2 data-lang="es">Probar el núcleo (para desarrolladores)</h2>
+    <h2 data-lang="en">Try the core (for developers)</h2>
+    <p data-lang="es">Requiere Node 22.5 o superior. Sin dependencias.</p>
+    <p data-lang="en">Requires Node 22.5 or newer. Zero dependencies.</p>
+    <pre><code>git clone https://github.com/imdotrino/dotrino-content
+cd dotrino-content
+node bin/cli.js start --port 3777 --max-gb 50</code></pre>
+    <p data-lang="es">Detalles de la API y del diseño en el <a href="https://github.com/imdotrino/dotrino-content">repositorio</a>.</p>
+    <p data-lang="en">API and design details in the <a href="https://github.com/imdotrino/dotrino-content">repository</a>.</p>
+  </section>
+
+  <section style="text-align:center; margin-top:32px">
+    <a class="cta" href="https://github.com/imdotrino/dotrino-content">GitHub</a>
+    <a class="cta ghost" href="https://dotrino.com/">Dotrino</a>
+  </section>
+
+  <footer>
+    <p>MIT · <span data-lang="es">parte del ecosistema</span><span data-lang="en">part of the</span> <a href="https://dotrino.com/">Dotrino</a><span data-lang="en"> ecosystem</span>.</p>
+  </footer>
+</div>
+
+<script type="module" src="https://cdn.jsdelivr.net/npm/@dotrino/support@0.7/src/index.js"></script>
+<script>
+  function setLang(l) {
+    document.documentElement.lang = l;
+    document.getElementById('lang-es').classList.toggle('on', l === 'es');
+    document.getElementById('lang-en').classList.toggle('on', l === 'en');
+    try { localStorage.setItem('lang', l); } catch (e) {}
+  }
+  (function () {
+    var saved;
+    try { saved = localStorage.getItem('lang'); } catch (e) {}
+    var l = saved || (navigator.language || 'es').slice(0, 2);
+    setLang(l === 'en' ? 'en' : 'es');
+  })();
+</script>
+</body>
+</html>
