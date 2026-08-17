@@ -139,14 +139,14 @@ distintos verían listas distintas del mismo dueño. Por eso el anuncio va en
 (`dotrino-proxy/API.md`, «Canales con nodo dueño»). El bloque publicado va firmado y
 cabe en 1000 caracteres; la lista devuelve hasta 100 miembros vivos.
 
-**⚠️ Los nodes de un mismo dueño NO se replican.** El almacén, el índice y el dedup
-por `cid` son de cada node. Si subes algo al portátil, el VPS no lo tiene: el enlace
-resuelve a *quien lo tenga*, así que con el portátil apagado el contenido no está
-disponible aunque el VPS esté encendido y sea del mismo dueño. La replicación entre
-nodes del mismo usuario sigue en los **diferidos** (§9). Consecuencia práctica: **lo
-que se comparte debe vivir en el node que está siempre** (para la cuenta oficial, el
-sembrador del VPS); el portátil es origen y caché, no respaldo. Es la primera sorpresa
-que se va a llevar quien monte portátil + NAS, y por eso se dice aquí.
+**⚠️ Los nodes de un mismo dueño NO se replican todavía.** El almacén, el índice y el
+dedup por `cid` son de cada node. Si subes algo al portátil, el VPS no lo tiene: el
+enlace resuelve a *quien lo tenga*, así que con el portátil apagado el contenido no
+está disponible aunque el VPS esté encendido y sea del mismo dueño. **Eso se arregla
+en la Fase 3 con §13.1** (el sembrador se alimenta de los otros nodes), que existe
+precisamente para esto. Hasta entonces, y como criterio permanente: **lo que se
+comparte debe vivir en el node que está siempre** (para la cuenta oficial, el sembrador
+del VPS); el portátil es origen y caché, no respaldo.
 
 ## 4. Privacidad: cifrado E2E por defecto, público opt-in
 
@@ -342,7 +342,10 @@ como otra cosa.
 - **Cuotas y GC:** límite de disco configurable; GC de blobs sin `pin` ni `ref` y
   con `ttl` vencido (como el TTL efímero de `here`/geo, pero configurable y con
   retención explícita para lo que quieras permanente).
-- **Sync/replicación** entre varios nodos del mismo usuario (casa + VPS).
+- ~~**Sync/replicación** entre varios nodos del mismo usuario (casa + VPS).~~
+  **PROMOVIDO a la Fase 3 el 2026-08-17** (decisión del dueño: *"el content server
+  debe ir alimentándose de los otros nodos, la idea es que esté siempre online"*).
+  Ver **§13.1**.
 
 ## 10. Integración con las apps del ecosistema
 
@@ -382,7 +385,10 @@ solución de una app):
       línea; para el dueño, cablear `listAgentsByLabel(id, 'content')` + `stat <cid>`.
    2. **P2P/swarm por WebRTC** (§13) + `@dotrino/content-client` (cifrado E2E + link
       por fragmento).
-   3. **Modo público HTTP opt-in** del node (§7.2, que ya tiene el `acl` que
+   3. **El sembrador se alimenta de los otros nodes** (§13.1): con el transporte
+      puesto, es el mismo código — el sembrador pide `cid` como cualquier peer. Es lo
+      que hace que un enlace no dependa de que el portátil esté encendido.
+   4. **Modo público HTTP opt-in** del node (§7.2, que ya tiene el `acl` que
       necesita: faltan bind, límite por IP y techo de egress) y el **sembrador 24/7**
       de la cuenta oficial.
 5. **Fase 4 — integración** en la app piloto (**eco**, que es la que resuelve el
@@ -431,6 +437,56 @@ arquitectura que las cumple:
 > Esto **es** el transporte del plano de datos por defecto (tier PWA): **P2P/swarm**,
 > no un túnel de streaming que pasaría bytes por infra de Dotrino. El tier standalone
 > = "tu box, tu ancho de banda" para 24/7.
+
+### 13.1. El sembrador se alimenta de los otros nodes (para estar SIEMPRE en línea)
+
+> Decidido por el dueño el 2026-08-17. Sale del §3.1: si los nodes de un mismo dueño
+> no se replican, un enlace depende de que esté encendido el aparato donde se subió
+> —el portátil— y eso hace inútil tener un sembrador 24/7.
+
+**El objetivo, en una línea: que lo compartible esté disponible aunque solo quede
+encendido el sembrador.**
+
+**No es un subsistema nuevo: es el sembrador comportándose como un consumidor más del
+enjambre** (§13). No hay un protocolo de replicación aparte, ni un "modo maestro", ni
+sincronización bidireccional. El sembrador hace exactamente lo que haría cualquier
+peer que quiere un `cid`:
+
+1. **Se entera** de que existe algo nuevo. Por el **plano de control** (§Fase 2, ya
+   hecho): el node que sube avisa `cid` + metadatos —un mensaje chico, que ahí sí cabe
+   por el proxy— o el sembrador pregunta `list` a los otros nodes del dueño cuando los
+   ve en línea (§3.1: la bóveda le dice cuáles son).
+2. **Los pide** por el mismo transporte de datos del enjambre (WebRTC), como cualquier
+   otro peer. **Los bytes nunca pasan por el proxy.**
+3. **Los verifica solo**: el `cid` es el hash, y el blobstore ya hashea al vuelo al
+   escribir. Un peer que mienta no cuela un byte.
+
+**Qué se replica, y qué NO.** Replicar *todo* está mal: el portátil puede tener
+gigas de cosas que no se comparten, y el sembrador es la máquina más expuesta y la que
+cuesta dinero. Por defecto se replica lo **compartible**: lo marcado `public` y lo
+**pineado** (que es como el dueño dice «esto quiero que dure»). El resto se queda donde
+está. Es un default, y el dueño lo puede cambiar por blob.
+
+**Que sea privado no lo impide.** El contenido privado viaja y se guarda **cifrado**:
+el sembrador solo necesita los bytes y el `cid`, nunca la llave (que vive en el
+`#fragment`). Es decir, **el nodo siempre encendido puede sostener tu contenido privado
+sin poder leerlo**. Eso es exactamente lo que hace que esto no sea una concesión.
+
+**La dirección importa: tira el sembrador, no empuja el portátil.** El que tiene
+uptime, disco y política de cuota es el sembrador, así que es él quien decide qué se
+trae y cuándo. El aparato efímero solo **avisa**; si se apaga a media descarga, el
+sembrador reintenta cuando vuelva a verlo — un aviso perdido no rompe nada, porque el
+`list` del paso 1 lo vuelve a descubrir.
+
+**Cuota y GC no se saltan.** Lo replicado entra con el `ttl`/`pin` que traía del
+origen y compite por la cuota del sembrador como cualquier otro blob (§Fase 1: los
+pineados no se desalojan; si solo quedan pineados, `ENOSPC`). Un sembrador lleno **no
+borra en silencio lo del dueño**: avisa. Marcar todo lo replicado como pineado sería
+la forma cómoda de llenar el disco y quedarse sin salida.
+
+**Autorización: nada nuevo.** Solo se acepta de aparatos de la **misma acta**, que es
+lo que el plano de control ya comprueba con `verifyChain` (§5). Un tercero no puede
+inyectarle contenido al sembrador de nadie.
 
 ## 14. La cuenta oficial de Dotrino = un tercero más (dogfooding)
 

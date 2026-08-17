@@ -150,9 +150,16 @@ WebRTC (§13) + `@dotrino/content-client`; (3) **modo público HTTP opt-in** del
 24/7 de la cuenta oficial. Luego Fase 4 = integración con **eco** (la app que resuelve
 el `#fragment`) + catálogo. (Fases completas en `DISENO.md` §11.)
 
-**Ojo con esto al escribir la Fase 3:** los nodes de un mismo dueño **no se replican**
-(§3.1). Lo que se comparte tiene que vivir en el node que está siempre encendido; el
-portátil es origen y caché, no respaldo.
+**Y dentro de la Fase 3, entre el transporte y el modo público: el sembrador se
+alimenta de los otros nodes** (`DISENO.md` §13.1, decidido el 2026-08-17 — sale de los
+diferidos, donde estaba como «sync/replicación»). El objetivo es que lo compartible
+siga disponible aunque solo quede encendido el sembrador. **No es un subsistema nuevo:
+es el sembrador comportándose como un consumidor más del enjambre** — se entera por el
+plano de control (ya hecho), pide los `cid` por WebRTC como cualquier peer y los
+verifica contra el hash. Por defecto se replica lo **público y lo pineado**, no todo; lo
+privado viaja y se guarda **cifrado**, así que el nodo siempre encendido puede sostener
+tu contenido sin poder leerlo; y lo replicado compite por la cuota como cualquier blob
+(un sembrador lleno avisa, no borra en silencio).
 
 ## Piezas del ecosistema a REUSAR (no reimplementar)
 
