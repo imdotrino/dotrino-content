@@ -7,11 +7,13 @@
 
 ## Qué es
 
-`dotrino-content` = pilar propuesto del ecosistema **Dotrino** para **hospedar y
-compartir media pesada** (video/imagen/audio) con enlaces compartibles,
-**autohospedado por el usuario**. Estado: **solo diseño, nada implementado.**
-Complementa al `@dotrino/store` (índice chico) y al `vault` (identidad); no los
-reemplaza.
+`dotrino-content` = pilar del ecosistema **Dotrino** para **hospedar y compartir
+media pesada** (video/imagen/audio) con enlaces compartibles, **autohospedado por el
+usuario**. Complementa al `@dotrino/store` (índice chico) y al `vault` (identidad);
+no los reemplaza.
+
+**Estado: Fases 1 y 2 implementadas** (core local + aparato del vault con plano de
+control cifrado) y **sin decisiones abiertas**. Siguiente = Fase 3. Detalle abajo.
 
 **Reglas duras del dueño (no negociables):**
 1. El contenido **siempre del lado del usuario, NUNCA en un server de Dotrino**.
@@ -30,11 +32,14 @@ reemplaza.
   porta **llave de dispositivo `D` + cert** (`D ← maestra`); la **maestra se queda
   en el vault**. Flujo: `dotrino-vault pair` → `dotrino-content enroll`. Verificación
   con `@dotrino/identity` `verifyChain`. Revocación: `dotrino-vault revoke <deviceId>`.
-  Propuesta: extraer un `@dotrino/enroll` compartido (terminal/content/otros).
+  **Resuelto: se consume `@dotrino/remote-agent`**, que ya trae todo eso (enroll,
+  identify, canal cifrado, revocación y renovación del cert). La propuesta vieja de
+  extraer un `@dotrino/enroll` está **obsoleta** — ver `DISENO.md` §5.2.
 - **Direccionado por contenido:** referencia compartible = **`ownerId + cid`**
   (`cid` = hash tipo BLAKE3/SHA-256; `ownerId` = pubkeyId de la maestra). El
-  `ownerId` es indispensable para **rutear** (ownerId → endpoint del node) y para
-  **verificar autenticidad** (el node firma con `D`, cadena `D ← ownerId`).
+  `ownerId` es indispensable para **rutear** (`ownerId` → nodes del dueño; cómo se
+  resuelve, en `DISENO.md` §3.1) y para **verificar autenticidad** (el node firma con
+  `D`, cadena `D ← ownerId`).
 - **Cifrado E2E por defecto** (server/relay solo ven ciphertext; la llave viaja en
   `#fragment`), **público opt-in**.
 - **Dos planos:** control por el **proxy** (`@dotrino/proxy-client`, `identify`
