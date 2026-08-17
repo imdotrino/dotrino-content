@@ -110,6 +110,44 @@ streaming / puerto propio). El `ownerId+cid` resuelve al node que tenga el blob.
   (cadena `D ← ownerId`), el cliente **verifica** que el contenido viene del dueño
   declarado (ningún relay ni node ajeno puede suplantarlo).
 
+### 3.1. Enrutamiento: cómo se sabe DÓNDE está el contenido (y qué pasa con dos nodes)
+
+> Escrito el 2026-08-17 a partir de la pregunta del dueño («¿qué pasa si tengo dos
+> content server, y cómo se sabe dónde está el contenido?»). Era la última pieza del
+> modelo que estaba nombrada pero sin especificar.
+
+**Un dueño puede tener N nodes, y eso NO es un conflicto: es un enjambre.** La
+referencia nombra al **dueño**, no a la máquina (`ownerId` = huella de la maestra), así
+que todos los aparatos de la misma acta son tenedores legítimos del mismo `cid`. Dos
+respuestas al mismo pedido no se contradicen: los bytes se verifican contra el hash, y
+además cada node firma con su `D` (cadena `D ← ownerId`), así que el consumidor
+comprueba las dos cosas — que los bytes son los pedidos y que quien los sirvió es un
+aparato del dueño declarado. **No hace falta saber dónde está: hace falta alguien que
+lo tenga.**
+
+La resolución `ownerId → nodes` tiene **dos caminos, según quién pregunte**:
+
+| Pregunta | Directorio | Estado |
+|---|---|---|
+| **El dueño** (sus propias apps, aparatos del acta) | **la bóveda**: `vault.devices` da la pubkey (`sub`) y el label de cada aparato = su dirección en el proxy. Es `listAgentsByLabel(id, 'content')` de `@dotrino/remote-agent/discover`, lo mismo que usa la terminal para encontrar máquinas. Luego a cada node se le pregunta `stat <cid>` (§Fase 2) | **las dos piezas ya existen**; falta cablearlas |
+| **Un tercero con el enlace** (no es del acta) | **canal firmado en el proxy**: el node se publica en `<nodeId>/content_<ownerId>` y cualquiera lista quién está en línea. NO puede consultar la bóveda del dueño — ni debe | **NO implementado**: hoy el node no anuncia nada |
+
+**El prefijo de nodo en el canal no es decorativo.** Hay dos proxios federados y un
+canal **sin** el id del nodo dueño es local a cada uno: dos consumidores en proxios
+distintos verían listas distintas del mismo dueño. Por eso el anuncio va en
+`<nodeId>/content_<ownerId>`, que es exactamente para lo que existe esa forma
+(`dotrino-proxy/API.md`, «Canales con nodo dueño»). El bloque publicado va firmado y
+cabe en 1000 caracteres; la lista devuelve hasta 100 miembros vivos.
+
+**⚠️ Los nodes de un mismo dueño NO se replican.** El almacén, el índice y el dedup
+por `cid` son de cada node. Si subes algo al portátil, el VPS no lo tiene: el enlace
+resuelve a *quien lo tenga*, así que con el portátil apagado el contenido no está
+disponible aunque el VPS esté encendido y sea del mismo dueño. La replicación entre
+nodes del mismo usuario sigue en los **diferidos** (§9). Consecuencia práctica: **lo
+que se comparte debe vivir en el node que está siempre** (para la cuenta oficial, el
+sembrador del VPS); el portátil es origen y caché, no respaldo. Es la primera sorpresa
+que se va a llevar quien monte portátil + NAS, y por eso se dice aquí.
+
 ## 4. Privacidad: cifrado E2E por defecto, público opt-in
 
 Dos modos por blob (lo elige el usuario al compartir):
@@ -337,10 +375,16 @@ solución de una app):
    público). **No hay `put` por el plano de control**, a propósito: los bytes no
    viajan por el proxy (§7.1). 12 pruebas nuevas, incluido un extremo a extremo con
    firmas y cifrado de verdad sobre un bus en memoria.
-4. **Fase 3 — exposición (SIGUIENTE):** P2P/swarm por WebRTC (§13) +
-   `@dotrino/content-client` (cifrado E2E + link por fragmento), **modo público HTTP
-   opt-in** del node (§7.2, que ya tiene el `acl` que necesita) y el sembrador 24/7
-   de la cuenta oficial.
+4. **Fase 3 — exposición (SIGUIENTE).** En este orden, porque el anuncio va **antes**
+   del transporte: sin él no hay a quién pedirle los bytes.
+   1. **Anuncio y resolución (§3.1):** el node se publica en
+      `<nodeId>/content_<ownerId>` y la lista responde qué nodes de ese dueño están en
+      línea; para el dueño, cablear `listAgentsByLabel(id, 'content')` + `stat <cid>`.
+   2. **P2P/swarm por WebRTC** (§13) + `@dotrino/content-client` (cifrado E2E + link
+      por fragmento).
+   3. **Modo público HTTP opt-in** del node (§7.2, que ya tiene el `acl` que
+      necesita: faltan bind, límite por IP y techo de egress) y el **sembrador 24/7**
+      de la cuenta oficial.
 5. **Fase 4 — integración** en la app piloto (**eco**, que es la que resuelve el
    `#fragment`) y registro en el catálogo.
 6. **Fase 5 — diferidos** (miniaturas, GC avanzado, replicación).

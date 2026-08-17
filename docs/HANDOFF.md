@@ -140,11 +140,19 @@ y, con el enlace puesto, `start` levanta además el **plano de control** por el 
   cancelaba su temporizador de 15 s y dejaba el bucle de eventos retenido tras cada
   consulta al vault (invisible en un demonio, fatal en un proceso corto).
 
-**Siguiente: Fase 3 — exposición.** P2P/swarm por WebRTC (§13) +
-`@dotrino/content-client`, **modo público HTTP opt-in** del node (§7.2: ACL ya está,
-faltan bind, límite por IP y techo de egress) y el sembrador 24/7 de la cuenta
-oficial. Luego Fase 4 = integración con **eco** (la app que resuelve el `#fragment`)
-+ catálogo. (Fases completas en `DISENO.md` §11.)
+**Siguiente: Fase 3 — exposición, y empieza por el ANUNCIO** (`DISENO.md` §3.1, nuevo):
+sin resolución `ownerId → nodes` no hay a quién pedirle los bytes. Orden: (1) el node se
+publica en `<nodeId>/content_<ownerId>` —con prefijo de nodo, que hay dos proxios
+federados y un canal sin prefijo es local a cada uno— y para el dueño se cablea
+`listAgentsByLabel(id, 'content')` + `stat <cid>`, que ya existen; (2) P2P/swarm por
+WebRTC (§13) + `@dotrino/content-client`; (3) **modo público HTTP opt-in** del node
+(§7.2: el ACL ya está, faltan bind, límite por IP y techo de egress) y el sembrador
+24/7 de la cuenta oficial. Luego Fase 4 = integración con **eco** (la app que resuelve
+el `#fragment`) + catálogo. (Fases completas en `DISENO.md` §11.)
+
+**Ojo con esto al escribir la Fase 3:** los nodes de un mismo dueño **no se replican**
+(§3.1). Lo que se comparte tiene que vivir en el node que está siempre encendido; el
+portátil es origen y caché, no respaldo.
 
 ## Piezas del ecosistema a REUSAR (no reimplementar)
 
