@@ -54,19 +54,34 @@ reemplaza.
   Con el túnel, el tier standalone no publica puertos (ingreso por el túnel);
   **excepción coturn** (TURN necesita rango UDP → `network_mode: host`).
 
-## Lo ÚNICO abierto (y NO bloquea empezar)
+## El sí/no que estaba abierto: CERRADO (2026-08-17)
 
-Un **sí/no**: **¿el tier standalone debe servir además por URL HTTP "normal"**
-(para que un `<video src>` en cualquier navegador ajeno, sin el cliente Dotrino, lo
-abra / hotlink)**, o basta con que se vea desde apps Dotrino (WebRTC/swarm)?**
-- **Basta WebRTC/swarm** → el standalone es solo un **seeder headless 24/7** (sin
-  puertos, sin transporte nuevo). Nada que decidir.
-- **Quiero URL HTTP** → hay que elegir cómo se expone: (A) túnel de **streaming**
-  dedicado —el túnel actual `r.dotrino.com` es 1 MB/30 s, NO sirve para video—, (C)
-  puerto/dominio propio del usuario, o (A+D) con fallback a **bucket cifrado opt-in**.
+Era: *¿el tier standalone debe servir además por URL HTTP "normal", o basta con que
+se vea desde apps Dotrino (WebRTC/swarm)?* **Respuesta del dueño: basta
+WebRTC/swarm** — con un matiz que sí se implementa. Detalle completo en
+`DISENO.md` §7; en corto:
 
-Notas: el `@dotrino/tunnel` actual (payload **1 MB**, timeout **30 s**) **no
-streamea video**. Ver `CLAUDE.md`.
+- **El enlace compartible es una URL de app con la referencia (`ownerId + cid` +
+  llave si va cifrado) en el `#fragment`**, y **la app que sabe consumirlo es eco**
+  (o cualquier otra del ecosistema). El servidor nunca ve la referencia.
+- **El standalone es un sembrador headless 24/7**: sin puertos publicados, sin
+  transporte nuevo. **Descartados** el túnel de streaming (A) y el bucket cifrado
+  (D). El visitante abre eco, una PWA, y **su navegador es el cliente**.
+- **El enlace no muere con el beacon de eco:** las 24 h son descubrimiento geo; el
+  fragmento se resuelve mientras un node siembre ese `cid`.
+- **El proxy no transporta contenido** (verificado en `server.js`): 24 h de TTL,
+  200 msgs / **1 MB por pubkey**, 64 MB global, frame `maxPayload` 1 MB y
+  **single-drain**. Es plano de control. La disponibilidad la sostiene el sembrador.
+- **Matiz que sí va (Fase 3): modo público HTTP opt-in del PROPIO node**
+  (`--public`, apagado por defecto), nunca una pieza que re-sirva desde infra de
+  Dotrino (sería CDN/relay gratis, regla dura 3). Requiere la ACL de la Fase 2 +
+  rate-limit por IP + techo de egress.
+- **Sin vista previa social**, y aceptado por el dueño: un `#fragment` hacia una app
+  estática no da tarjeta en X/LinkedIn. Solo el contenido público de la cuenta
+  oficial puede tenerla, con una envoltura HTML por pieza (`/p/<cid>`) servida por
+  el node de Dotrino — **eso es un permalink y se parecerá a un blog**; se dice así.
+- **Quién sostiene qué:** el dueño hospeda el contenido **de Dotrino**; quien quiera
+  otro content node sostiene el suyo. No se promete disponibilidad a terceros.
 
 ## Fase 1: HECHA (2026-07-09) — siguiente paso = Fase 2
 
@@ -129,6 +144,8 @@ catálogo. (Fases completas en `DISENO.md` §11.)
 
 ## Estado de este handoff
 
-Diseño **cerrado y coherente** con las 3 reglas duras. **Fase 1 implementada y
-testeada (2026-07-09)** — ver sección "Fase 1: HECHA". Falta: (1) el sí/no de
-HTTP del tier standalone (no bloquea), (2) crear/pushear el repo, (3) Fase 2.
+Diseño **cerrado y coherente** con las 3 reglas duras, **y ya sin decisiones
+abiertas**: el sí/no del HTTP se cerró el 2026-08-17 (ver la sección de arriba) y el
+repo está creado, pusheado y con la landing en vivo. **Fase 1 implementada y
+testeada (2026-07-09).** Lo que falta es ejecución: **Fase 2 (enrolamiento por vault
++ ACL, extrayendo `@dotrino/enroll`)** y luego Fase 3.

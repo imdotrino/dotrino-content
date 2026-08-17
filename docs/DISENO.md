@@ -194,32 +194,76 @@ GET    /stats                  # uso de disco, cuota, nº blobs
 - **Sin trackers**, sin analítica de terceros; si acaso, GoatCounter del ecosistema
   para la cáscara pública (no para el contenido).
 
-## 7. ⚠️ Decisión abierta CRÍTICA: cómo se expone al mundo (el video no cabe en el túnel actual)
+## 7. Cómo se expone al mundo — CERRADO (2026-08-17)
 
-El túnel `@dotrino/tunnel` (`r.dotrino.com`) hoy tiene **payload 1 MB y timeout
-30 s** (ver `CLAUDE.md`). Eso **sirve para requests chicos** (identidad, JSON),
-pero **NO para streamear video** (transferencias grandes, conexiones largas,
-Range). Hay que decidir el transporte de la media. Opciones:
+> Decidido por el dueño. **Era la decisión bloqueante del §Fase 0 y ya no lo es.**
+> No re-litigar: quedó descartado el túnel de streaming (A) y el bucket cifrado (D).
 
-- **A. Túnel de streaming dedicado** (recomendado a explorar): extender el relay
-  del túnel con un canal **sin el límite de 1 MB/30 s**, con soporte de `Range` y
-  backpressure, específico para `dotrino-content`. Mantiene "todo por el nodo del
-  usuario", pero limita el ancho de banda al **uplink del usuario** (ok para
-  compartir 1-a-pocos; no para viralidad masiva).
-- **B. P2P / WebRTC** (como qrshare) para entrega directa emisor→receptor, sin
-  relay. Bueno para 1-a-1 en vivo; malo para "link que abro mañana" (requiere que
-  el emisor esté online y no hay URL cacheable).
-- **C. Puerto propio / dominio propio del usuario** (autohosteo "real"): quien
-  tenga un VPS/NAS con puerto abierto sirve directo. Máximo control; más fricción.
-- **D. Fallback opcional a bucket público** (rompe el autohosteo puro): subir el
-  blob **cifrado** a un almacenamiento barato (R2/S3/etc.) para lo que necesite
-  alcance/uptime alto, **opt-in y explícito**. El server solo tiene ciphertext, así
-  que sigue sin ver el contenido; pero deja de ser "solo tu servidor".
+**El enlace compartible es una URL de una app del ecosistema con la referencia en
+el `#fragment`, y el consumidor es una app Dotrino, no un navegador cualquiera.**
 
-**Recomendación:** empezar con **A** (túnel de streaming) para el caso "comparto
-con mi gente", documentar el límite (tu uplink), y dejar **D** como opción
-avanzada y explícita para quien quiera alcance. Definir esto **antes** de codear:
-condiciona todo el transporte.
+```
+https://eco.dotrino.com/#<ownerId>/<cid>[/<llave>]     ← la referencia va en el fragmento
+```
+
+- **Quien sabe encontrar el contenido es la app** (eco, messenger, trueque…): lee
+  la referencia del fragmento y pide los bytes al node del dueño. El servidor
+  **nunca** ve `ownerId`, `cid` ni la llave (el fragmento no viaja en la petición).
+- **Transporte de datos = WebRTC** (P2P/swarm del §13), con **señalización** por el
+  proxy. El **tier standalone NO necesita servir por URL HTTP** para que las apps
+  consuman: es un **sembrador headless 24/7**, sin puertos publicados y sin
+  transporte nuevo.
+- **El visitante no necesita instalar nada:** abre eco (una PWA) y **su navegador
+  es el cliente**. Por eso el "no hay cliente Dotrino en ese navegador" dejó de ser
+  un problema.
+- **El enlace no depende del beacon efímero de eco.** El beacon de 24 h es
+  *descubrimiento* geo; el enlace se resuelve solo con el fragmento, así que vive
+  mientras haya un node sembrando ese `cid`.
+
+### 7.1. El proxy NO transporta contenido (medido, no supuesto)
+
+La cola offline del proxy es del **plano de control**, y sus topes lo dicen:
+**24 h de TTL**, **200 mensajes / 1 MB por pubkey**, 64 MB globales con eviction
+oldest-first, `maxPayload` de frame **1 MB**, y **single-drain** (el primer cliente
+que se identifica la drena y se borra). Por ahí no pasa media, y lo que pasara lo
+consumiría el primer lector.
+
+> **La disponibilidad la sostiene el sembrador del dueño, no el proxy.** Las 24 h
+> son la ventana de descubrimiento, no almacenamiento. Dotrino hospeda **su**
+> contenido; quien quiera otro content node se lo monta y sostiene el suyo.
+
+### 7.2. Modo público HTTP: sí, pero SOLO en el node del dueño (Fase 3, opt-in)
+
+El core ya tiene el servidor HTTP (`src/server.js`: `GET/HEAD /c/<cid>` con
+`Range`/206, `ETag=cid`, `immutable`, 304). Hoy escucha en `127.0.0.1` sin auth;
+exponerlo es abrir el bind y ponerle reglas, no escribir transporte nuevo.
+
+- **Es un MODO del propio content node** (`--public`, apagado por defecto), **no
+  otra app.** Una pieza aparte que fuera a buscar contenido y lo re-sirviera desde
+  infra de Dotrino es exactamente el caso prohibido por la regla dura 3: un
+  CDN/relay gratis con nuestra factura.
+- **Requisitos antes de abrir el bind:** ACL de la Fase 2 (solo sale lo marcado
+  `acl: public` y en claro; lo cifrado y lo privado **no salen ni por error**),
+  **rate-limit por IP** y **techo de egress con corte** — un HTTP público en tu
+  máquina es donde aparecen el hotlinking y la factura.
+- **Para la cuenta oficial el dueño es Dotrino**, así que su sembrador sirviendo su
+  propio contenido público por HTTP no rompe ninguna regla: es
+  *"Dotrino paga SU transferencia, no la tuya"* (§14).
+
+### 7.3. Vista previa social (OG): NO la hay, y es aceptado
+
+Un enlace con `#fragment` hacia una app estática **no puede** tener tarjeta propia
+en X ni en LinkedIn: el rastreador solo ve la cáscara de la app, la misma para
+todos los enlaces. **El dueño lo aceptó explícitamente (2026-08-17).** No se
+"arregla" moviendo la referencia a la ruta: eso la mandaría al servidor, que es lo
+que el `#fragment` existe para evitar.
+
+Lo único que sí puede tener tarjeta es el contenido **público de la cuenta
+oficial**, vía el modo del §7.2: una **envoltura HTML por pieza** (`/p/<cid>` con
+`og:title`/`og:description`/`og:image` y el enlace hacia eco) servida por el node
+de Dotrino. **Llamémoslo por su nombre: eso es un permalink y se va a parecer a un
+blog**, aunque solo lleve la tarjeta y el enlace; es legítimo, pero no se vende
+como otra cosa.
 
 ## 8. Co-empaquetado con el vault (una instalación)
 
@@ -258,27 +302,37 @@ solución de una app):
 
 ## 11. Fases de implementación (propuesta)
 
-1. **Fase 0 — decidir el §7** (transporte de media). Bloqueante.
-2. **Fase 1 — core local:** `dotrino-content` daemon: subir/leer/borrar por `cid`
-   en disco, `Range`, índice SQLite, cuotas básicas. Sin cifrado aún (o cifrado del
-   lado cliente ya, mejor). Solo local (localhost).
-3. **Fase 2 — auth por vault:** caps `content:write/admin`, IPC con el vault.
-4. **Fase 3 — exposición** por el transporte elegido (§7) + `@dotrino/content-client`
-   (cifrado E2E + link por fragmento).
-5. **Fase 4 — integración** en una app piloto (eco o messenger) y landing
-   `content.dotrino.com` + catálogo.
+1. ~~**Fase 0 — decidir el §7**~~ **CERRADA (2026-08-17):** referencia por
+   `#fragment` en una URL de app, consumo por app Dotrino, transporte WebRTC,
+   standalone = sembrador sin HTTP. Ver §7.
+2. **Fase 1 — core local: HECHA (2026-07-09).** Blobstore por `cid`, `Range`/206,
+   índice SQLite, cuota + GC, CLI, cero dependencias, tests verdes.
+3. **Fase 2 — auth por vault (SIGUIENTE):** enrolamiento tipo `dotrino-terminal`
+   (pair → cert de dispositivo → `verifyChain` → revoke), caps
+   `content:write`/`content:admin` y **ACL** (`public` vs privado/cifrado), que es
+   lo que le da sentido a "público". Extraer **`@dotrino/enroll`** compartido
+   (§5.2): lo necesitan content, terminal y los bots del ecosistema.
+4. **Fase 3 — exposición:** P2P/swarm por WebRTC (§13) + `@dotrino/content-client`
+   (cifrado E2E + link por fragmento), **modo público HTTP opt-in** del node (§7.2)
+   y el sembrador 24/7 de la cuenta oficial.
+5. **Fase 4 — integración** en la app piloto (**eco**, que es la que resuelve el
+   `#fragment`) y registro en el catálogo.
 6. **Fase 5 — diferidos** (miniaturas, GC avanzado, replicación).
 
 ## 12. Preguntas abiertas para el dueño
 
-1. **§7 es la grande:** ¿A (túnel streaming), C (dominio/puerto propio), o A+D
-   (con fallback a bucket cifrado opt-in)? Define el transporte.
-2. **Hash:** ¿BLAKE3 (rápido) o SHA-256 (ubicuo)? (Recomiendo BLAKE3.)
-3. **Índice de metadatos:** ¿SQLite propio del content, o reusar `@dotrino/store`?
-   (SQLite escala mejor para muchos blobs; el store para el índice sincronizable.)
+1. ~~**§7, el transporte**~~ — **CERRADO (2026-08-17)**, ver §7.
+2. ~~**Hash**~~ — **CERRADO (Fase 1):** SHA-256 (`sha256-<hex>`). BLAKE3 pedía
+   módulo nativo y el `.npmrc` bloquea build scripts; el prefijo de algoritmo deja
+   la puerta abierta.
+3. ~~**Índice de metadatos**~~ — **CERRADO (Fase 1):** SQLite propio
+   (`node:sqlite`); el store queda para el índice sincronizable de fases futuras.
 4. **¿MVP con cifrado desde el día 1** (recomendado) o público primero y cifrado
-   después?
-5. **Cuota/retención por defecto** y política de GC.
+   después? Nota: lo de la cuenta oficial nace **público** por definición (§7.2),
+   así que el camino corto es público primero **con la ACL puesta**, y cifrado en la
+   Fase 3 junto al `content-client`.
+5. **Cuota/retención por defecto** y política de GC (hoy configurable por CLI:
+   `--max-gb`, `--max-blob-mb`, `--gc-min`).
 
 ## 13. Compartir grandes volúmenes: P2P + swarm (sin server, costo del usuario)
 
