@@ -1,6 +1,10 @@
 /**
  * ContentNode = BlobStore (bytes) + Index (metadatos) + cuota/GC (Fase 1).
- * Sin red ni identidad: eso llega en Fases 2/3 (DISENO.md §11).
+ *
+ * Sigue sin saber de red: quien la pone es `agent.js` (Fase 2), que además le dice
+ * qué `owner` representa —la huella de la maestra del vault, la mitad izquierda de
+ * la referencia compartible `ownerId + cid` (DISENO.md §3)— y usa el `acl` para
+ * decidir qué puede salir del node cuando llegue el modo público (§7.2).
  */
 import { mkdir } from 'node:fs/promises'
 import { BlobStore, isValidCid } from './blobstore.js'
@@ -10,15 +14,17 @@ export { isValidCid }
 
 export class ContentNode {
   /**
-   * @param {{ dir: string, maxBytes?: number, maxBlobBytes?: number }} opts
+   * @param {{ dir: string, maxBytes?: number, maxBlobBytes?: number, owner?: string|null }} opts
    *   dir: raíz de datos · maxBytes: cuota total de disco (0 = sin límite)
    *   maxBlobBytes: tamaño máximo por blob (0 = sin límite)
+   *   owner: `ownerId` de la maestra (lo pone el agente al enlazar; null sin vault)
    */
   constructor (opts) {
     if (!opts?.dir) throw new Error('falta opts.dir')
     this.dir = opts.dir
     this.maxBytes = opts.maxBytes || 0
     this.maxBlobBytes = opts.maxBlobBytes || 0
+    this.owner = opts.owner || null
     this.store = new BlobStore(opts.dir)
     this.index = null
   }
@@ -34,7 +40,7 @@ export class ContentNode {
    * Sube un stream. Si la cuota no alcanza, intenta GC de no-pineados; si aun
    * así no cabe, rechaza con code ENOSPC (no borra pineados jamás).
    */
-  async put (readable, { mime = 'application/octet-stream', enc = 0, ttl = null } = {}) {
+  async put (readable, { mime = 'application/octet-stream', enc = 0, ttl = null, acl = null } = {}) {
     const { cid, size, existed } = await this.store.put(readable, {
       maxBytes: this.maxBlobBytes || undefined
     })
@@ -45,13 +51,22 @@ export class ContentNode {
         throw Object.assign(new Error('cuota de disco excedida'), { code: 'ENOSPC' })
       }
     }
-    this.index.upsert({ cid, size, mime, enc, ttl })
+    this.index.upsert({ cid, size, mime, owner: this.owner, enc, acl, ttl })
     return { cid, size, mime, existed }
   }
 
   /** Metadatos de un blob (o null). */
   stat (cid) {
     return isValidCid(cid) ? this.index.get(cid) : null
+  }
+
+  /**
+   * Marca un blob como público o privado (`acl`). Es lo único que autoriza a que
+   * los bytes salgan del node cuando esté encendido el modo público (DISENO.md
+   * §7.2); sin `public` explícito, no sale.
+   */
+  setAcl (cid, acl) {
+    return this.index.setAcl(cid, acl)
   }
 
   /** ReadStream del blob; range = { start, end } inclusivo. */

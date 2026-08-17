@@ -43,8 +43,18 @@ export class Index {
 
   list () {
     return this.db.prepare(
-      'SELECT cid, size, mime, createdAt, enc, ttl, pinned FROM blobs ORDER BY createdAt DESC'
+      'SELECT cid, size, mime, createdAt, owner, enc, acl, ttl, pinned FROM blobs ORDER BY createdAt DESC'
     ).all()
+  }
+
+  /**
+   * Cambia el `acl` de un blob (`public` | `private`). Devuelve false si no existe.
+   * Se cambia aparte del `upsert` a propósito: volver a subir los mismos bytes NO
+   * debe reabrir ni cerrar un blob por accidente.
+   */
+  setAcl (cid, acl) {
+    const { changes } = this.db.prepare('UPDATE blobs SET acl = ? WHERE cid = ?').run(acl, cid)
+    return changes > 0
   }
 
   remove (cid) {

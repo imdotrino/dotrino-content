@@ -110,12 +110,41 @@ más smoke test manual con `curl`):
   al final; sirve 200 con SEO/OG/GoatCounter/bilingüe/support). App registrada
   en el catálogo de `dotrino-home` (`cat: 'developers'`, `wip: true`).
 
-**Siguiente: Fase 2 — auth por vault:** enrolamiento tipo `dotrino-terminal`
-(pair → device cert → `verifyChain` → revoke; ver `dotrino-terminal/agent/`),
-caps `content:write`/`content:admin`, y valorar extraer el **`@dotrino/enroll`**
-compartido. Luego Fase 3 = exposición (P2P/swarm + tier standalone según el
-sí/no); Fase 4 = integración app piloto + landing `content.dotrino.com` +
-catálogo. (Fases completas en `DISENO.md` §11.)
+## Fase 2: HECHA (2026-08-17) — siguiente paso = Fase 3
+
+**El node ya es un aparato del vault.** `dotrino-content enroll <código>` lo enlaza
+y, con el enlace puesto, `start` levanta además el **plano de control** por el proxy.
+
+- **No se escribió middleware: se consume `@dotrino/remote-agent`** (el que ya usan
+  terminal e ia). Ahí viven el emparejamiento endurecido, el `identify` firmado, el
+  canal cifrado por sesión, el refresco de revocados, la **renovación del cert** y el
+  auto-borrado ante un `vault.revoked` firmado. La propuesta vieja de "extraer
+  `@dotrino/enroll`" queda **obsoleta**: la pieza ya existía (ver `DISENO.md` §5.2).
+- **Propio de este repo:** `src/agent.js` (pegamento) y `src/ops.js` (las
+  operaciones: `hello`, `list`, `stat`, `stats`, `pin`, `unpin`, `remove`, `acl`,
+  `gc`). Contrato de errores por **`code`**, no por la frase.
+- **`owner` + `acl`:** el node estampa el `ownerId` (huella de la maestra) en lo que
+  se sube — la mitad izquierda de `ownerId + cid` — y guarda el `acl`; **público es
+  opt-in** y un blob cifrado no puede marcarse público. Eso es lo que la Fase 3 mira
+  antes de servir algo por HTTP.
+- **Sin `put` por el plano de control, a propósito:** los bytes no van por el proxy
+  (§7.1) — subir es local, y P2P desde la Fase 3.
+- **Corrección de diseño:** los caps `content:write`/`content:admin` **no existen** en
+  el vault; se autoriza con `vault:sign`, que es lo que el vault emite a cada aparato
+  del acta. Permisos por app serían un cambio en el vault, no aquí.
+- **Pruebas:** 19 en total (7 de la Fase 1 + 12 nuevas), incluido un **extremo a
+  extremo** con llaves, certificados, `verifyChain` y sobres AES-GCM de verdad sobre
+  un bus en memoria: un aparato de la misma maestra administra, uno de otra maestra
+  no abre sesión y un cert vencido tampoco.
+- **De paso, arreglado en el pilar:** `@dotrino/remote-agent@0.3.1` — `vaultRpc` no
+  cancelaba su temporizador de 15 s y dejaba el bucle de eventos retenido tras cada
+  consulta al vault (invisible en un demonio, fatal en un proceso corto).
+
+**Siguiente: Fase 3 — exposición.** P2P/swarm por WebRTC (§13) +
+`@dotrino/content-client`, **modo público HTTP opt-in** del node (§7.2: ACL ya está,
+faltan bind, límite por IP y techo de egress) y el sembrador 24/7 de la cuenta
+oficial. Luego Fase 4 = integración con **eco** (la app que resuelve el `#fragment`)
++ catálogo. (Fases completas en `DISENO.md` §11.)
 
 ## Piezas del ecosistema a REUSAR (no reimplementar)
 

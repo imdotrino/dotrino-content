@@ -140,9 +140,15 @@ reinventa):
 - **Confianza:** cada extremo verifica que el `cert` del otro **encadena a la
   misma maestra pineada** (`@dotrino/identity` `verifyChain`), mismo trust anchor
   que la terminal. Sin enrolamiento a ESE vault (o revocado) → no sirve nada.
-- **Autorización de operaciones:** subir/borrar/administrar exige un cert con
-  scope `content:write` / `content:admin` (delegado por el vault). Lectura privada
-  por link-con-llave no requiere cuenta (la llave va en el `#fragment`).
+- **Autorización de operaciones (CORREGIDO en la Fase 2):** administrar exige un
+  cert **de la misma maestra**, con el scope **`vault:sign`** que el vault ya emite
+  a cada aparato del acta. Los scopes `content:write` / `content:admin` que decía
+  este documento **no existen**: el vault emite un juego fijo
+  (`vault:sign`/`read`/`store`, `vault:admin` para la consola remota, y
+  `vault:secrets:<ns>` para servicios), así que pedirlos habría exigido cambiar la
+  emisión de certificados y el acta. Si algún día se quieren permisos por app, ese
+  es el cambio a hacer — en el vault, no aquí. Lectura privada por link-con-llave no
+  requiere cuenta (la llave va en el `#fragment`).
 - **ACL por círculo (opcional):** media privada compartida con un grupo por
   membresía → scope `content:read:<circleId>` firmado por el dueño (patrón
   `here`/geo + web-of-trust).
@@ -164,12 +170,26 @@ se parte en dos:
 - **Plano de datos (bytes/streaming) → transporte del §7** (túnel de streaming /
   puerto propio / etc.). Este es el añadido sobre el modelo de la terminal.
 
-### 5.2. Patrón repetido → helper compartido
+### 5.2. El helper compartido YA EXISTE: `@dotrino/remote-agent`
 
-Ya van **terminal + content + (otros servicios)** enrolándose igual. Extraer un
-**`@dotrino/enroll`** (o exponerlo desde `@dotrino/identity`) para que todo
-servicio enrolado haga *pair → device cert → verifyChain → revoke* **idéntico**,
-sin duplicar. "Enlazar un servicio al vault" = una sola pieza reutilizable.
+> Corregido el 2026-08-17. Este documento proponía **extraer** un `@dotrino/enroll`.
+> No hace falta: la pieza está escrita, publicada y en producción. **No la
+> reescribas ni escribas otra.**
+
+**`@dotrino/remote-agent`** es el middleware de "aparato remoto enrolado al vault"
+del ecosistema, y ya lo consumen `dotrino-terminal` y `dotrino-ia`. De ahí sale todo
+lo que este node necesitaba para la Fase 2:
+
+| Del paquete | Qué resuelve |
+|---|---|
+| `/link` → `enroll()`, `parseQr()` | emparejamiento endurecido (llave `D` propia, código que se muestra y NO viaja, `commit` del código, verificación de la cadena, `link.json` en 0600) |
+| `/agent` → `startRemoteAgent()` | `identify` firmado en el proxy, canal cifrado por sesión (ECDH → AES-GCM), refresco de revocados, **renovación del cert** antes de vencer y auto-borrado al recibir un `vault.revoked` firmado |
+| raíz | constantes del protocolo + el `e2e` isomórfico (lo usan las pruebas) |
+
+Lo único propio de `dotrino-content` es el pegamento (`src/agent.js`) y las
+operaciones (`src/ops.js`). **Deuda conocida, ajena a este repo:** el agente de
+`dotrino-terminal` sigue con su copia inline anterior a la extracción (y por eso sin
+renovación de cert); migrarlo al paquete es tarea suya, con su republicación.
 
 ## 6. API (borrador)
 
@@ -307,14 +327,20 @@ solución de una app):
    standalone = sembrador sin HTTP. Ver §7.
 2. **Fase 1 — core local: HECHA (2026-07-09).** Blobstore por `cid`, `Range`/206,
    índice SQLite, cuota + GC, CLI, cero dependencias, tests verdes.
-3. **Fase 2 — auth por vault (SIGUIENTE):** enrolamiento tipo `dotrino-terminal`
-   (pair → cert de dispositivo → `verifyChain` → revoke), caps
-   `content:write`/`content:admin` y **ACL** (`public` vs privado/cifrado), que es
-   lo que le da sentido a "público". Extraer **`@dotrino/enroll`** compartido
-   (§5.2): lo necesitan content, terminal y los bots del ecosistema.
-4. **Fase 3 — exposición:** P2P/swarm por WebRTC (§13) + `@dotrino/content-client`
-   (cifrado E2E + link por fragmento), **modo público HTTP opt-in** del node (§7.2)
-   y el sembrador 24/7 de la cuenta oficial.
+3. **Fase 2 — auth por vault: HECHA (2026-08-17).** El node se enrola
+   (`dotrino-content enroll <código>`) consumiendo **`@dotrino/remote-agent`**
+   (§5.2), y con el enlace puesto atiende su **plano de control** por el proxy:
+   `hello`, `list`, `stat`, `stats`, `pin`, `unpin`, `remove`, `acl`, `gc`
+   (`src/ops.js`), cada uno dentro de una sesión cifrada y autorizada con
+   `verifyChain` contra la misma maestra. Estampa el `owner` (`ownerId`) en lo que
+   se sube y guarda el **ACL** (`public` opt-in; un blob cifrado no puede ser
+   público). **No hay `put` por el plano de control**, a propósito: los bytes no
+   viajan por el proxy (§7.1). 12 pruebas nuevas, incluido un extremo a extremo con
+   firmas y cifrado de verdad sobre un bus en memoria.
+4. **Fase 3 — exposición (SIGUIENTE):** P2P/swarm por WebRTC (§13) +
+   `@dotrino/content-client` (cifrado E2E + link por fragmento), **modo público HTTP
+   opt-in** del node (§7.2, que ya tiene el `acl` que necesita) y el sembrador 24/7
+   de la cuenta oficial.
 5. **Fase 4 — integración** en la app piloto (**eco**, que es la que resuelve el
    `#fragment`) y registro en el catálogo.
 6. **Fase 5 — diferidos** (miniaturas, GC avanzado, replicación).
