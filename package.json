@@ -11,10 +11,15 @@
   },
   "scripts": {
     "start": "node bin/cli.js start",
-    "test": "node --test 'test/**/*.test.js'"
+    "test": "node --test 'test/**/*.test.js'",
+    "type-check": "tsc --noEmit"
   },
   "engines": {
     "node": ">=22.5"
   },
-  "license": "MIT"
+  "license": "MIT",
+  "devDependencies": {
+    "typescript": "5.9.3",
+    "@types/node": "22.20.1"
+  }
 }

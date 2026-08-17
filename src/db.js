@@ -57,27 +57,34 @@ export class Index {
     return changes > 0
   }
 
-  /** Suma de bytes indexados. */
+  /** Suma de bytes indexados. @returns {number} */
   totalBytes () {
-    return this.db.prepare('SELECT COALESCE(SUM(size), 0) AS n FROM blobs').get().n
+    return Number(this.db.prepare('SELECT COALESCE(SUM(size), 0) AS n FROM blobs').get().n)
   }
 
+  /** @returns {number} */
   count () {
-    return this.db.prepare('SELECT COUNT(*) AS n FROM blobs').get().n
+    return Number(this.db.prepare('SELECT COUNT(*) AS n FROM blobs').get().n)
   }
 
-  /** Blobs con ttl vencido (candidatos a GC incondicional, aunque estén sin pin). */
+  /**
+   * Blobs con ttl vencido (candidatos a GC incondicional, aunque estén sin pin).
+   * @returns {{ cid: string, size: number }[]}
+   */
   expired (now = Date.now()) {
-    return this.db.prepare(
+    return /** @type {{ cid: string, size: number }[]} */ (this.db.prepare(
       'SELECT cid, size FROM blobs WHERE ttl IS NOT NULL AND ttl <= ? AND pinned = 0'
-    ).all(now)
+    ).all(now))
   }
 
-  /** No-pineados más viejos primero (candidatos a GC por cuota). */
+  /**
+   * No-pineados más viejos primero (candidatos a GC por cuota).
+   * @returns {{ cid: string, size: number }[]}
+   */
   evictable () {
-    return this.db.prepare(
+    return /** @type {{ cid: string, size: number }[]} */ (this.db.prepare(
       'SELECT cid, size FROM blobs WHERE pinned = 0 ORDER BY createdAt ASC'
-    ).all()
+    ).all())
   }
 
   close () {
