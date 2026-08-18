@@ -72,7 +72,10 @@ Identidad y túnel **compartidos** (abajo).
 ## 2.1. Topología: el "node" es la PWA del usuario (+ standalone opcionales)
 
 **"Node" (identidad + contenido) es un ROL**, no una máquina; lo cumplen uno o
-varios perfiles de dispositivo, todos bajo **la misma identidad** (una maestra):
+varios perfiles de dispositivo, todos bajo **la misma identidad** (una maestra). Es el
+**patrón del ecosistema** —el mismo que hace que un dispositivo pueda ser bóveda cuando
+no hay daemon del vault—, escrito en `CLAUDE.md`: el aparato cumple el rol y la pieza
+dedicada es un upgrade, **nunca un requisito**.
 
 - **PWA-node (default, CERO instalación):** la propia app del usuario **es** el
   node. Guarda identidad (maestra o dispositivo primario) + **tu contenido local**
