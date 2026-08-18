@@ -42,6 +42,18 @@ control cifrado) y **sin decisiones abiertas**. Siguiente = Fase 3. Detalle abaj
   `D`, cadena `D ← ownerId`).
 - **Cifrado E2E por defecto** (server/relay solo ven ciphertext; la llave viaja en
   `#fragment`), **público opt-in**.
+- **Qué puede guardar: TODO** (2026-08-17). No es "el servidor de media pesada" —
+  guarda cualquier byte del usuario, de cualquier tipo y tamaño, **incluidos los posts
+  de las apps** (eco es el ejemplo trabajado en `DISENO.md` §3.2). **La frontera con
+  `@dotrino/store` no es el tamaño**: al store va **lo que debe estar SIEMPRE
+  disponible** (regla del dueño), porque vive en el aparato y responde offline; al
+  content, los bytes, que necesitan un node sembrando. Razón estructural: el `cid` es
+  el hash, así que el content guarda **versiones, no variables** — el puntero a "cuál
+  es el `cid` vigente" es del store.
+  **⚠️ Norma pendiente:** `CONVENCIONES-APPS.md` §4 todavía dice que *todo* el
+  contenido del usuario (incluidas imágenes/blobs) va por el store. Habrá que
+  actualizarla cuando el content esté disponible para las apps (Fase 3/4) — **no
+  antes**, o se estaría mandando a las apps a usar algo que aún no existe.
 - **Dos planos:** control por el **proxy** (`@dotrino/proxy-client`, `identify`
   firmado) como la terminal; **datos/media aparte** (no cabe en el proxy).
 - **Transporte de datos por defecto = P2P WebRTC + swarm (tipo WebTorrent):** bytes
@@ -153,7 +165,11 @@ federados y un canal sin prefijo es local a cada uno— y para el dueño se cabl
 WebRTC (§13) + `@dotrino/content-client`; (3) **modo público HTTP opt-in** del node
 (§7.2: el ACL ya está, faltan bind, límite por IP y techo de egress) y el sembrador
 24/7 de la cuenta oficial. Luego Fase 4 = integración con **eco** (la app que resuelve
-el `#fragment`) + catálogo. (Fases completas en `DISENO.md` §11.)
+el `#fragment`), con el patrón ya definido en §3.2: **cada eco = un blob** (objeto
+firmado e inmutable) y sus adjuntos otros blobs; **la línea de tiempo NO** (lista que
+crece → índice en el store); y **durabilidad opt-in por post**, porque guardar tus ecos
+en tu node cambia lo que el usuario entiende por "efímero" y eso se dice en la app, no
+se hace por detrás. Más el catálogo. (Fases completas en `DISENO.md` §11.)
 
 **Y dentro de la Fase 3, entre el transporte y el modo público: el sembrador se
 alimenta de los otros nodes** (`DISENO.md` §13.1, decidido el 2026-08-17 — sale de los

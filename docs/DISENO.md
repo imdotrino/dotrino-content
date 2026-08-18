@@ -1,17 +1,25 @@
 # Diseño — `dotrino-content` (servidor de contenido del ecosistema)
 
-> **Estado:** diseño cerrado; **Fase 1 (core local) implementada** (2026-07-09,
-> ver `HANDOFF.md`). Este doc define el *qué* y el *cómo*.
+> **Estado:** diseño cerrado y **sin decisiones abiertas**; **Fases 1 (core local) y
+> 2 (aparato del vault) implementadas** (ver `HANDOFF.md`). Este doc define el *qué* y
+> el *cómo*.
 >
 > **Idioma/estilo:** español neutro (tuteo). Fuente de verdad del ecosistema:
 > [`CLAUDE.md`](../../CLAUDE.md) y [`CONVENCIONES-APPS.md`](../../CONVENCIONES-APPS.md).
 
 ## 1. Propósito
 
-Un **servidor de contenido autohospedado** por el usuario que **guarda y sirve
-media pesada** (video, imágenes, audio, archivos) y produce **enlaces
-compartibles**. Es el pilar que faltaba: hospedar bytes grandes y servirlos por
-URL, con streaming.
+Un **almacén de contenido autohospedado** por el usuario que guarda **cualquier
+byte suyo** y produce **enlaces compartibles**. Es el pilar que faltaba: guardar lo
+que el usuario tiene y servirlo, con streaming cuando hace falta.
+
+> **Corregido el 2026-08-17 (decisión del dueño): esto NO es "el servidor de media
+> pesada".** Así estaba escrito, y era una herencia del primer caso de uso (compartir
+> video) que limitaba el pilar sin motivo: lo que guarda son **bytes direccionados por
+> su hash**, y a eso le da igual si dentro hay un video, un PDF, un `.zip` de
+> respaldo, un `.vcf`, un APK o una nota de dos líneas. **La respuesta a "¿qué puede
+> almacenar?" es TODO** — con la única frontera del §3.2, que no es de tipo ni de
+> tamaño.
 
 **Misión Dotrino:** tu contenido, en tu servidor, bajo tus reglas — sin anuncios,
 sin rastreo, sin vender tu identidad. El content server es *dónde* vive lo que
@@ -19,11 +27,13 @@ compartes.
 
 ### Qué NO es (deslindes)
 
-- **No es `@dotrino/store`.** El store (`store.dotrino.com`, IndexedDB en el
-  navegador) guarda **datos chicos y estructurados** (hilos, sets, historial,
-  metadatos) del usuario, local, con sync a Drive. Un video **no** cabe ahí ni se
-  sirve por URL. El content server **complementa** al store: el store guarda el
-  **índice** (chico); los **blobs** (grandes) viven en el content server.
+- **No es `@dotrino/store`, y la frontera NO es el tamaño.** Regla del dueño, y es la
+  que se aplica primero: **el store guarda lo que debe estar SIEMPRE disponible.**
+  Vive en el navegador (IndexedDB, offline, instantáneo, con sync cifrado), así que
+  responde aunque no haya ningún node encendido: preferencias, el índice de lo tuyo,
+  el puntero que dice **cuál es el `cid` vigente**. El content guarda **el resto** —
+  los bytes—, y para eso hace falta que alguien lo esté sembrando. Detalle, razón
+  estructural y ejemplo trabajado en el **§3.2**.
 - **No es `qrshare`.** qrshare es transferencia **P2P efímera** (WebRTC, sin
   hospedaje). El content server es **hospedaje persistente** con URL estable.
 - **No es el `vault`.** El vault (`dotrino-vault`) es tu **CA/identidad** (guarda
@@ -79,16 +89,17 @@ alcanzable** (el navegador no atiende `GET` entrante; el móvil se duerme). Por 
 | Necesito… | Basta con |
 |---|---|
 | Compartir en vivo / P2P / 1-a-pocos **mientras estoy online** | **la PWA** (WebRTC) |
-| Un **link que abra cualquiera, cuando sea (24/7, persistente)** | un **node standalone** (o §7-D bucket cifrado) |
+| Un **link que abra cualquiera, cuando sea (24/7, persistente)** | un **node standalone** sembrando (§7) |
 
 No compiten: la **PWA es el node base**; el **standalone es el upgrade de
 disponibilidad/alcance**. Con ambos, tu contenido vive en la PWA y lo **fijas
 (pin)** en el box para que esté siempre arriba (el box = tu "servidor de casa"
 que espeja lo que elijas).
 
-**Reformula la Fase 0 (§7):** el transporte del plano de datos NO es una elección
-única global, es **por tier** — PWA → WebRTC/P2P; standalone → HTTP (túnel de
-streaming / puerto propio). El `ownerId+cid` resuelve al node que tenga el blob.
+**Ya resuelto en el §7 (2026-08-17):** el transporte del plano de datos es **WebRTC
+en los dos tiers** — el standalone es un **sembrador headless** y no necesita servir
+por HTTP para que las apps consuman (el modo público HTTP es un extra opt-in, §7.2).
+El `ownerId + cid` resuelve al node que tenga el blob (§3.1).
 
 ## 3. Modelo de datos: direccionado por contenido (hash)
 
@@ -104,8 +115,8 @@ streaming / puerto propio). El `ownerId+cid` resuelve al node que tenga el blob.
   los **bytes** viven solo en el content server.
 - **Referencia compartible = `ownerId + cid` (+ `#fragment` con la llave si es
   privado).** El `cid` da inmutabilidad/dedup; el **`ownerId`** (pubkeyId de la
-  maestra del dueño) **es indispensable para el ruteo**: `ownerId → endpoint del
-  node` (por el túnel/proxy). Un `cid` suelto es ambiguo (varios nodes podrían
+  maestra del dueño) **es indispensable para el ruteo**: `ownerId → nodes del dueño`
+  (cómo se resuelve, en el **§3.1**). Un `cid` suelto es ambiguo (varios nodes podrían
   tenerlo/reclamarlo); el `ownerId` desambigua y, como el node firma con su `D`
   (cadena `D ← ownerId`), el cliente **verifica** que el contenido viene del dueño
   declarado (ningún relay ni node ajeno puede suplantarlo).
@@ -147,6 +158,67 @@ en la Fase 3 con §13.1** (el sembrador se alimenta de los otros nodes), que exi
 precisamente para esto. Hasta entonces, y como criterio permanente: **lo que se
 comparte debe vivir en el node que está siempre** (para la cuenta oficial, el sembrador
 del VPS); el portátil es origen y caché, no respaldo.
+
+### 3.2. Qué puede guardar: TODO — y la única frontera (con eco como ejemplo)
+
+> Decidido por el dueño el 2026-08-17: *"¿qué puede almacenar dotrino-content? y la
+> respuesta debería ser todo"*, con el caso concreto *"debería poder almacenar los
+> posts de eco"*.
+
+**Cualquier byte del usuario, de cualquier tipo y cualquier tamaño**, cifrado o en
+claro: documentos, fotos, respaldos, exportaciones, adjuntos de mensajería, pases de
+la wallet, archivos sueltos… y **los posts de las apps**. No hay lista de tipos
+permitidos y no debe haberla.
+
+**La frontera no es el tipo ni el tamaño. Son dos criterios que apuntan al mismo
+sitio**, uno operativo y otro estructural:
+
+1. **El operativo, y es la regla de entrada (del dueño): al store va lo que debe
+   estar SIEMPRE disponible.** El store vive en el aparato del usuario y responde
+   offline, al instante, haya o no un node encendido. El content depende de que
+   alguien esté sembrando: perfecto para los bytes, inaceptable para lo que la app
+   necesita para arrancar. Si sin ese dato la app no funciona, es del store.
+2. **El estructural, que explica por qué lo anterior no es una preferencia:** el `cid`
+   *es* el hash, así que el content guarda **versiones, no variables**. No puede
+   guardar *«lo actual»* de algo —un documento que editas, una lista que crece— porque
+   cada cambio produce un `cid` distinto y el content no sabe cuál es el vigente. Eso
+   solo lo puede saber algo mutable, y eso es el store.
+
+| Va en el **content** | Va en el **store** |
+|---|---|
+| el objeto, tal como quedó (bytes) | **qué `cid` es el vigente** |
+| cada versión, con su propio `cid` | los índices que crecen (mi línea de tiempo, mis carpetas) |
+| lo que tiene tamaño o se comparte por enlace | lo que la app necesita para arrancar y operar |
+| lo que puede esperar a que haya un node | preferencias, sesión, lo chico de la UI |
+
+> **Matiz honesto del tier PWA:** cuando el node *es* la propia app (§2.1), sus blobs
+> están en el aparato (OPFS) y también responden offline. La regla sigue valiendo igual,
+> porque lo que no se puede dar por disponible es el contenido que vive **en otro**
+> aparato o en el sembrador; y porque el índice de qué hay sigue siendo mutable.
+
+**Ejemplo trabajado: los posts de eco.** Es el caso que mejor parte por esa línea.
+
+- **Cada eco = un blob.** Un eco es un objeto **firmado e inmutable** (texto, enlaces,
+  tags, geohash grueso, firma) que no se edita nunca: encaja exacto en el direccionado
+  por hash. Sus **adjuntos** (imagen, audio, video) son blobs aparte, referenciados
+  por `cid` desde el eco.
+- **Mi línea de tiempo NO es un blob**: es una lista que crece → índice mutable en el
+  store, o un **blob índice** cuyo `cid` vigente guarda el store. Ese es el patrón
+  general para cualquier app, no un truco de eco.
+- **Qué cambia en la promesa de eco, y hay que decirlo en la app.** Eco es *"efímero
+  en la red, durable solo en tu copia local"*: el **TTL de 24 h gobierna el
+  descubrimiento** (el beacon geo), no la existencia — su propio diseño ya dice que
+  sobrevive la copia local de quien lo guardó. Guardar tus ecos en tu node añade **tu
+  propia copia**, tuya y en tu máquina, alcanzable solo con la referencia
+  (`ownerId + cid`, más la llave si va cifrado). Eso no rompe la promesa, la vuelve
+  honesta — **pero la durabilidad tiene que ser opt-in por post** («guardar este eco
+  en mi node»), con lo efímero como default. Publicar creyendo que se borra solo y
+  toparse un año después con el enlace vivo es exactamente lo que el ecosistema no
+  hace.
+- **Muchos blobs chiquitos:** un eco pesa cientos de bytes y esto genera miles de
+  blobs diminutos (un archivo + una fila de índice cada uno). Aguanta, pero si algún
+  día pesa, la salida es **empaquetar por periodo** (un blob archivo por día/mes) y
+  dejar el índice en el store. No se optimiza antes de tiempo, pero queda dicho.
 
 ## 4. Privacidad: cifrado E2E por defecto, público opt-in
 
