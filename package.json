@@ -24,6 +24,6 @@
   },
   "dependencies": {
     "@dotrino/identity": "0.53.0",
-    "@dotrino/remote-agent": "0.3.1"
+    "@dotrino/remote-agent": "0.3.2"
   }
 }
