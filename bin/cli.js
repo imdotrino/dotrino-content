@@ -76,22 +76,29 @@ if (cmd === 'enroll') {
       '  dotrino-content enroll <código>')
     process.exit(1)
   }
-  const { enroll, parseQr } = await import('@dotrino/remote-agent/link')
-  const dir = linkDir()
+  // Se enrola como SERVICIO (`ns:content`), que es lo que le da además la llave de
+  // CIFRADO a la que el vault le sella sus variables. El enlace del plano de control
+  // queda escrito con la MISMA llave: un aparato, una identidad (ver `vaultEnv.js`).
+  const { enrollToVault, serviceDir, NS } = await import('../src/vaultEnv.js')
   try {
-    const link = await enroll({
-      qr: parseQr(pairing),
-      label: 'content',
-      dir,
-      onChallenge: ({ deviceId, code }) => {
+    const res = await enrollToVault(pairing, {
+      onReplace: (prev) => {
+        console.log(`\n⚠ este node YA estaba enrolado (aparato ${prev.deviceId}).`)
+        console.log('  Se descarta esa identidad; con ella se va su cajón de variables,')
+        console.log('  que va indexado por su llave. Si solo querías recargar la')
+        console.log('  configuración, NO enroles: reinicia el node.\n')
+      },
+      onCode: ({ deviceId, code }) => {
         console.log(`\n  este node es el aparato ${deviceId}`)
-        console.log(`  código para aprobar en tu bóveda:  ${code}\n`)
-        console.log('  (apruébalo ahí; este código NO viaja por la red)')
+        console.log(`  apruébalo en tu bóveda:  dotrino-vault approve ${code}\n`)
+        console.log('  (el código NO viaja por la red: lo tipeas tú)')
       }
     })
-    const days = Math.round((link.cert.exp - Date.now()) / 86400000)
+    const days = Math.round((res.cert.exp - Date.now()) / 86400000)
     console.log(`\nlisto: node enlazado. Certificado válido ${days} días (se renueva solo).`)
-    console.log(`enlace guardado en ${dir}`)
+    console.log(`identidad en ${serviceDir()}  ·  enlace en ${linkDir()}`)
+    console.log(`\nahora carga su configuración en la bóveda (namespace «${NS}»):`)
+    console.log('  dotrino-vault secret set content CONTENT_STORAGE=local --public')
   } catch (e) {
     console.error(`\nno se pudo enlazar: ${e.message}`)
     process.exit(1)
@@ -105,6 +112,15 @@ const port = Number(values.port || process.env.PORT || 3777)
 const maxBytes = values['max-gb'] ? Number(values['max-gb']) * 1024 ** 3 : 0
 const maxBlobBytes = values['max-blob-mb'] ? Number(values['max-blob-mb']) * 1024 ** 2 : 0
 const gcMin = Number(values['gc-min'] || 60)
+
+// La configuración la sirve el vault (§15.14). Se pide ANTES de levantar nada: de
+// ahí sale `CONTENT_STORAGE` y, con él, qué almacén usa este node. Sin vault esto no
+// hace nada y el node corre en local, que es el modo normal de un autohospedado.
+const { startVaultConfig, isEnrolled } = await import('../src/vaultEnv.js')
+const vaultConfig = startVaultConfig({
+  log: (m) => console.log(m)
+})
+if (!isEnrolled()) console.log('sin vault: configuración local (enrola con: dotrino-content enroll <código>)')
 
 const node = await new ContentNode({ dir, maxBytes, maxBlobBytes }).init()
 const server = createServer(node)

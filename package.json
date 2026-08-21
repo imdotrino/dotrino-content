@@ -23,7 +23,8 @@
     "typescript": "5.9.3"
   },
   "dependencies": {
-    "@dotrino/identity": "0.53.0",
-    "@dotrino/remote-agent": "0.3.2"
+    "@dotrino/identity": "0.55.0",
+    "@dotrino/remote-agent": "0.4.1",
+    "@dotrino/vault": "0.27.0"
   }
 }
