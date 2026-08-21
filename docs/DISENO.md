@@ -1029,3 +1029,40 @@ el público. **Dos tokens, cada uno acotado a su bucket** (§15.1).
   Storj y el propio S3 hablan el mismo protocolo: no hay una integración por proveedor.
 - **`CONTENT_S3_BUCKET_PUBLIC` es opcional a propósito**: un node puede tener bucket
   solo para lo privado (durabilidad) y seguir sirviendo lo público por la red (§15.3).
+
+### 15.15. Los buckets los crea el DUEÑO; el node los comprueba
+
+> Pregunta del dueño, 2026-08-21: *"¿los creo yo o lo hace el content server?"*.
+
+**Los crea él.** El node nunca crea buckets, y la razón es de permisos: **crear cuesta
+mucho más poder que usar**. `CreateBucket` es una operación de cuenta, y un token capaz
+de crear normalmente también puede listar y borrar *todos* los demás. Dárselo a un
+servicio que corre en un VPS —para ahorrar un clic que se hace una vez— tira por la
+borda el §15.1, donde cada token está acotado a **su** bucket.
+
+Y aunque quisiéramos, no podría: **conectar el dominio y abrir el acceso público del
+bucket público no son operaciones de S3**, son del proveedor. Quedaría una automatización
+a medias que igual te manda al panel, que es peor que ninguna.
+
+**Lo que sí hace el node es comprobar, al arrancar**, las tres cosas que se rompen sin
+dar error:
+
+| Comprobación | Por qué |
+|---|---|
+| Los dos nombres de bucket **no son el mismo** | el accidente más tonto y más grave: lo privado acabaría en el bucket con dominio |
+| El bucket privado **no responde sin credenciales** (401/403, nunca 200) | si está abierto, el ciphertext y sus metadatos son públicos y nadie se entera |
+| Lo que sube al público **se ve en `CONTENT_PUBLIC_BASE_URL`** | un dominio mal conectado no da error: simplemente no sirve nunca |
+
+Si la primera o la segunda fallan, **el node no arranca con bucket**: se queda en `local`
+y lo dice (§15.14). Un almacén mal configurado que parece funcionar es la peor de las
+tres opciones.
+
+**Lo que hay que hacer una vez, en el panel** (R2 como referencia; en otro proveedor son
+los mismos cuatro pasos con otros nombres):
+
+1. Activar R2 en la cuenta.
+2. Crear el bucket **privado**: sin dominio y sin acceso público.
+3. Crear el bucket **público**: con **dominio propio** conectado (el `r2.dev` está
+   limitado y no es para producción).
+4. Dos tokens *Object Read & Write*, **cada uno acotado a un solo bucket**, y guardarlos
+   en el vault (`ns:content`, §15.14). El secreto se enseña una sola vez.
