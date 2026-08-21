@@ -1005,15 +1005,29 @@ estado de operación, no un secreto:
 
 | Variable | Valor | |
 |---|---|---|
-| **`CONTENT_STORAGE`** | `local` (por defecto) · `s3` | **pública**. Sin ella, disco y nada más |
+| **`CONTENT_STORAGE`** | `local` (por defecto) · **`r2`** · `b2` · `hetzner` · `storj` · `s3` | **pública**. Sin ella, disco y nada más |
 
-Con `s3`, y solo entonces, hacen falta las demás. **Públicas** (son direcciones y
+**El valor nombra al PROVEEDOR, no al protocolo** (decisión del dueño, 2026-08-21:
+*"ponme `CONTENT_STORAGE=r2` explícitamente, si no es confuso"*). Y tenía razón: leer
+`s3` al lado de un endpoint de Cloudflare hace dudar de si aquello es AWS. Todos los
+valores menos `local` usan **el mismo backend** —hablan el mismo protocolo—, así que
+esto no multiplica el código: dice quién está detrás, que es lo que quiere saber quien
+mira la consola. `s3` queda para «un S3 cualquiera», incluido el de Amazon.
+
+De paso, saber el proveedor deja poner los valores por omisión que él pide: con `r2`,
+`CONTENT_S3_REGION` vale `auto` sola.
+
+> Las demás siguen llamándose `CONTENT_S3_*` a propósito: no dicen quién hospeda, dicen
+> **en qué idioma se le habla**. Es también la pista de que esas mismas variables sirven
+> tal cual para Backblaze o Hetzner.
+
+Con un proveedor puesto, y solo entonces, hacen falta las demás. **Públicas** (son direcciones y
 nombres, no llaves):
 
 | Variable | Ejemplo |
 |---|---|
 | `CONTENT_S3_ENDPOINT` | `https://<ACCOUNT_ID>.r2.cloudflarestorage.com` |
-| `CONTENT_S3_REGION` | `auto` en R2 |
+| `CONTENT_S3_REGION` | con `r2` no hace falta ponerla: vale `auto` |
 | `CONTENT_S3_BUCKET_PRIVATE` | el bucket sin acceso público |
 | `CONTENT_S3_BUCKET_PUBLIC` | el bucket con dominio conectado (opcional: sin él, lo público viaja por la red) |
 | `CONTENT_PUBLIC_BASE_URL` | `https://<dominio del bucket público>` |
@@ -1022,7 +1036,7 @@ Y **privadas** (nunca salen de la máquina): `CONTENT_S3_KEY_ID` + `CONTENT_S3_S
 para el bucket privado, y `CONTENT_S3_PUBLIC_KEY_ID` + `CONTENT_S3_PUBLIC_SECRET` para
 el público. **Dos tokens, cada uno acotado a su bucket** (§15.1).
 
-- **`CONTENT_STORAGE=s3` sin las demás no arranca a medias:** el node se queda en
+- **Un proveedor sin las demás no arranca a medias:** el node se queda en
   `local` y lo **dice** por consola, con la lista de lo que falta. Un backend a medio
   configurar que parece funcionar es peor que uno apagado.
 - **Cambiar de proveedor es cambiar el endpoint y las llaves.** R2, Backblaze, Hetzner,
