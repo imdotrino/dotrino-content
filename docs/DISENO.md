@@ -681,7 +681,9 @@ especial" ni ruta privilegiada; Dotrino es otro usuario de su propio protocolo.
 > > *"puede estar privado en el bucket por espacio más que nada, pero estaría cifrado"*
 
 **El bucket es el DISCO del node, no una puerta de salida.** Esa frase es toda la
-sección; lo demás son sus consecuencias.
+sección; lo demás son sus consecuencias. (Con un matiz que añadió el dueño y que vive
+en el §15.11: el disco local no desaparece, se convierte en la **caché** — no siempre
+se jala del bucket.)
 
 | | Público | Privado |
 |---|---|---|
@@ -855,3 +857,52 @@ instalación; `@aws-sdk` traería decenas de paquetes para hacer un `PUT`.
 el backend `fs`, que es una implementación real, y el backend `s3` se prueba contra un
 **bucket de verdad** bajo un prefijo de pruebas, saltándose la prueba si no hay
 credenciales. No se escribe un S3 de mentira para que la suite se sienta verde.
+
+### 15.11. La caché local: el disco deja de ser el almacén y pasa a ser la caché
+
+> Añadido por el dueño el 2026-08-21: *"va a tener un pequeño caché en el server de
+> contenido actual, así que no siempre se jala del S3 u otro bucket"*.
+
+Es el mismo árbol `blobs/aa/bb/<cid>` de hoy, con otro significado: deja de ser *"esto
+es todo lo que tengo"* y pasa a ser *"esto es lo que tengo a mano"*. Casi no hay código
+nuevo — la cuota (`--max-gb`), el GC y los pins ya existen y se convierten en la
+política de desalojo. Lo que sí cambia es una cosa peligrosa, y por eso está escrita:
+
+**El GC deja de ser borrar y pasa a ser desalojar… pero solo cuando puede.**
+
+| | Sin bucket (hoy) | Con bucket |
+|---|---|---|
+| Qué hace el GC | **destruye** el blob | **desaloja** una copia caliente |
+| Se puede deshacer | no | sí, se vuelve a jalar |
+| Cerrojo | avisar por consola de que borra de verdad | **jamás desalojar un blob que no esté confirmado en el bucket** |
+
+Ese cerrojo es un campo en el índice (`remote`, 0/1) que **solo se pone a 1 cuando el
+bucket confirma la subida**, no cuando se lanza. Sin él, una subida a medias más un GC
+oportuno pierden contenido de un usuario en silencio, que es el peor fallo posible aquí.
+
+**Cómo se comporta**
+
+- **Escribir:** se guarda en local, se responde, y la subida al bucket va **detrás**.
+  Rápido para quien sube, pero **no se miente sobre la durabilidad**: hasta que el
+  bucket confirma, ese blob es "solo local" y el GC no lo toca. Un pendiente que no
+  logra subir se reintenta y se **reporta**; no se olvida.
+- **Leer:** si está local, sale de local. Si no, se **jala del bucket mientras se
+  sirve**, guardando de paso la copia. Con una excepción: **una lectura parcial
+  (`Range`) no puebla la caché** — cachear trozos sueltos deja agujeros que luego
+  parecen un blob completo.
+- **Qué se queda:** LRU por **último acceso**, no por antigüedad. Hoy `gcCandidates`
+  ordena por `createdAt ASC`, que para un almacén está bien y para una caché está mal:
+  lo viejo y muy pedido es justo lo que hay que conservar. Hace falta un `lastRead`.
+- **Los pins mandan sobre todo lo demás:** un pin es *"esto lo quiero a mano siempre"*,
+  y ya está implementado. Las **miniaturas se quedan siempre**: pesan poco y son lo que
+  más se pide.
+
+**Una caché de contenido direccionado por hash no se invalida nunca.** El `cid` es el
+hash: si el objeto existe, es el correcto, para siempre. No hay coherencia que
+mantener, ni versiones, ni `ETag` que comparar. El único evento que la toca es un
+**borrado** (despublicar, `remove`), y ese sí tiene que ir a los dos sitios: local y
+bucket.
+
+**Para qué sirve de verdad, con R2 detrás:** no para ahorrar egress —es cero—, sino
+para la **latencia** y para el **tráfico del propio VPS**, que sí es finito. Con un
+proveedor que cobre salida, además, ahorra dinero en cada lectura repetida.
