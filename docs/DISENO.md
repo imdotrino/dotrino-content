@@ -689,8 +689,16 @@ se jala del bucket.)
 |---|---|---|
 | Cómo se guarda | en claro | **cifrado** (AES-GCM, llave por blob, §4) |
 | Dónde | bucket público del dueño | bucket privado del dueño |
-| **Cómo se entrega** | **URL directa** del bucket/CDN | **solo por la red Dotrino** (WebRTC, señalización por el proxy; ≤256 KB por el plano de control) |
+| **Cómo se entrega, CON bucket** | **URL directa** del bucket/CDN | **solo por la red Dotrino** |
+| **Cómo se entrega, SIN bucket** | **también por la red Dotrino** | igual, por la red Dotrino |
 | Quién paga | el dueño | el dueño |
+
+**El puerto HTTP del node NO es el camino de lo público** (precisión del dueño,
+2026-08-21: *"el HTTP sería solo para imágenes, y el contenido público debe ir por la
+red de Dotrino en caso de no tener bucket"*). Ese puerto es y sigue siendo el de las
+**vistas previas** del §7.2 — imágenes, comprobadas por sus bytes. Un PDF, un vídeo o
+un archivo comprimido públicos **no salen por ahí**: van por la red Dotrino, o por una
+URL del bucket si lo hay.
 
 **El invariante, que se puede probar:** *lo que sale por una URL está en claro y
 marcado `public`; lo cifrado no tiene URL.* Es el mismo cerrojo que ya vive en
@@ -730,8 +738,15 @@ público hereda su superficie de exposición. Cuestan lo mismo (se paga por byte
    immutable` (es direccionado por contenido: nunca cambia, no hay que invalidar nada).
 5. La URL pública es directa y permanente: `https://<dominio-del-bucket>/<cid>`.
 
-**Leer algo público:** un `GET`. Sin nada del ecosistema en medio — y eso es una
-ventaja de privacidad, no un descuido: **quien lee no se identifica ante nada nuestro**.
+**Leer algo público — dos caminos, según haya bucket o no**
+
+- **Con bucket:** un `GET` a la URL directa. Sin nada del ecosistema en medio, y eso es
+  una ventaja de privacidad, no un descuido: **quien lee no se identifica ante nada
+  nuestro**. Además es lo único que sigue disponible con la máquina del dueño apagada.
+- **Sin bucket:** exactamente el mismo camino que lo privado — referencia, `findNodes`,
+  WebRTC — solo que los bytes van en claro y no hace falta llave en el fragmento. El
+  puerto HTTP del node **no** es una alternativa aquí: ese sirve imágenes de vista
+  previa (§7.2), no contenido.
 
 **Subir algo privado**
 
@@ -760,12 +775,23 @@ identidad, que no se revoca y no sabe a quién sirve.*
 
 Gana **espacio**, que era el motivo: el sembrador 24/7 deja de necesitar disco (el VPS
 del proxio tiene 8,6 GB en total) y deja de ser el sitio donde se pierden los bytes si
-se muere la máquina. El bucket da **durabilidad**.
+se muere la máquina.
 
-**No da disponibilidad a lo privado.** Como la entrega sigue siendo por WebRTC, un
-enlace privado sigue necesitando **un node encendido**. El bucket no es alcanzable por
-sí solo para lo privado, y eso es exactamente lo que queremos. El caveat honesto del
-§13 sigue en pie tal cual.
+Y gana una cosa más, que se ve al juntarlo con el §15.12. **El bucket compra dos cosas
+distintas según de qué contenido hablemos:**
+
+| | Sin bucket | Con bucket | O sea, el bucket da… |
+|---|---|---|---|
+| **Público** | red Dotrino → necesita un node encendido | URL directa, siempre arriba | **disponibilidad** |
+| **Privado** | red Dotrino, bytes en el disco del node | red Dotrino, bytes en el bucket | **durabilidad** |
+
+**A lo privado NO le da disponibilidad, y es a propósito.** Como la entrega sigue siendo
+por WebRTC, un enlace privado sigue necesitando **un node encendido**: el bucket no es
+alcanzable por sí solo para lo privado, que es exactamente lo que queremos. El caveat
+honesto del §13 sigue en pie tal cual.
+
+Dicho al revés, que es como se explica solo: **lo público con bucket es lo único de
+todo esto que sigue en pie con la máquina del dueño apagada.**
 
 ### 15.4. Quién puede tener bucket: solo el node standalone
 
@@ -923,7 +949,7 @@ Las puertas son tres y conviene no confundirlas, porque sirven cosas distintas:
 |---|---|---|---|
 | **API local** (`server.js`) | **todo**: público y privado (lo privado, cifrado — descifra quien tenga la llave) | a las herramientas del propio dueño | **`127.0.0.1` y punto** |
 | **Red Dotrino** (WebRTC + plano de control ≤256 KB) | todo, con ACL y dentro de sesión cifrada y autorizada | a quien tenga la referencia y pase la ACL | por el proxy |
-| **Puerto público** (`public.js`, `--public`) | **solo** lo marcado `public` y en claro | a internet | `0.0.0.0`, **apagado por defecto** |
+| **Puerto público** (`public.js`, `--public`) | **solo imágenes** marcadas `public` y en claro — es el puerto de las vistas previas, no el de lo público | a internet | `0.0.0.0`, **apagado por defecto** |
 
 Tres cosas que se derivan de esa tabla y que no hay que perder:
 
@@ -932,10 +958,12 @@ Tres cosas que se derivan de esa tabla y que no hay que perder:
   no hay `--host` para ella, y no debe haberlo. Si algún día hace falta llegar desde
   otra máquina, la respuesta no es abrir ese puerto — es la red Dotrino, que ya trae
   identidad, ACL y cifrado.
-- **El puerto público sigue siendo el de las vistas previas** (§7.2): imágenes de mapa
-  de bits comprobadas por sus bytes, ≤512 KB. `--public-max-kb 0` sirve originales, es
-  una decisión consciente del dueño y se avisa por consola. Lo que **no** hace ese
-  puerto, con bucket o sin él, es servir algo privado: es el primer cerrojo.
+- **El puerto público es el de las vistas previas, no el de lo público** (§7.2):
+  imágenes de mapa de bits comprobadas por sus bytes, ≤512 KB. `--public-max-kb 0`
+  levanta el tope, pero **el cerrojo de "solo imágenes" no se levanta con nada**: sirve
+  fotos grandes, nunca un PDF ni un vídeo. Lo público que no sea imagen viaja por la
+  red Dotrino o por una URL del bucket. Y lo privado no sale por ahí jamás, con bucket
+  o sin él: es el primer cerrojo.
 - **El bucket va POR DEBAJO de las tres.** La interfaz vive en `blobstore.js`, así que
   ninguna de las tres puertas se entera del cambio: el mismo `GET /c/<cid>` responde
   igual saque los bytes del disco, de la caché (§15.11) o del bucket.
