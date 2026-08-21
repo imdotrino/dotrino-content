@@ -992,3 +992,40 @@ enlace tira esa propiedad a la basura.
   por la que da igual quién siembre un `cid` en el enjambre (§13).
 - **Y por eso el atajo se puede quitar y poner sin avisar a nadie**: cambiar de
   proveedor, apagar el bucket o volver a encenderlo no invalida un solo enlace.
+
+### 15.14. La configuración: una variable pública dice qué backend hay
+
+> Pedido por el dueño el 2026-08-21: *"debe haber una variable pública que defina la
+> integración, y las variables necesarias para cada caso de existir"*.
+
+Toda la configuración del node llega por el **vault** (`ns:content`), como la de
+cualquier servicio del ecosistema. La que manda es una sola, y es **pública** —se ve
+desde la consola y el TUI sin destapar nada— porque saber *qué backend usa un node* es
+estado de operación, no un secreto:
+
+| Variable | Valor | |
+|---|---|---|
+| **`CONTENT_STORAGE`** | `local` (por defecto) · `s3` | **pública**. Sin ella, disco y nada más |
+
+Con `s3`, y solo entonces, hacen falta las demás. **Públicas** (son direcciones y
+nombres, no llaves):
+
+| Variable | Ejemplo |
+|---|---|
+| `CONTENT_S3_ENDPOINT` | `https://<ACCOUNT_ID>.r2.cloudflarestorage.com` |
+| `CONTENT_S3_REGION` | `auto` en R2 |
+| `CONTENT_S3_BUCKET_PRIVATE` | el bucket sin acceso público |
+| `CONTENT_S3_BUCKET_PUBLIC` | el bucket con dominio conectado (opcional: sin él, lo público viaja por la red) |
+| `CONTENT_PUBLIC_BASE_URL` | `https://<dominio del bucket público>` |
+
+Y **privadas** (nunca salen de la máquina): `CONTENT_S3_KEY_ID` + `CONTENT_S3_SECRET`
+para el bucket privado, y `CONTENT_S3_PUBLIC_KEY_ID` + `CONTENT_S3_PUBLIC_SECRET` para
+el público. **Dos tokens, cada uno acotado a su bucket** (§15.1).
+
+- **`CONTENT_STORAGE=s3` sin las demás no arranca a medias:** el node se queda en
+  `local` y lo **dice** por consola, con la lista de lo que falta. Un backend a medio
+  configurar que parece funcionar es peor que uno apagado.
+- **Cambiar de proveedor es cambiar el endpoint y las llaves.** R2, Backblaze, Hetzner,
+  Storj y el propio S3 hablan el mismo protocolo: no hay una integración por proveedor.
+- **`CONTENT_S3_BUCKET_PUBLIC` es opcional a propósito**: un node puede tener bucket
+  solo para lo privado (durabilidad) y seguir sirviendo lo público por la red (§15.3).

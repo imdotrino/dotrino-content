@@ -45,7 +45,10 @@ export class ContentNode {
       maxBytes: this.maxBlobBytes || undefined
     })
     if (this.maxBytes && !existed) {
-      const over = (this.index.totalBytes() + size) - this.maxBytes
+      // La cuota es del DISCO, así que cuenta lo que está cacheado aquí, no el
+      // inventario: con bucket detrás, lo desalojado sigue existiendo (§15.11)
+      // pero ya no ocupa nada — contarlo dejaría la cuota excedida para siempre.
+      const over = (this.index.cachedBytes() + size) - this.maxBytes
       if (over > 0 && this.gc({ needBytes: over }).freed < over) {
         await this.store.remove(cid)
         throw Object.assign(new Error('cuota de disco excedida'), { code: 'ENOSPC' })
@@ -101,8 +104,15 @@ export class ContentNode {
     return meta
   }
 
-  /** ReadStream del blob; range = { start, end } inclusivo. */
+  /**
+   * ReadStream del blob; range = { start, end } inclusivo.
+   *
+   * Anota el acceso (`lastRead`), que es lo que ordena el desalojo de la caché
+   * (§15.11): sin esto, el GC tira lo más antiguo, y lo antiguo y muy pedido es
+   * justo lo que hay que conservar.
+   */
   read (cid, range) {
+    this.index.touch(cid)
     return this.store.read(cid, range)
   }
 
@@ -120,10 +130,15 @@ export class ContentNode {
   }
 
   stats () {
+    const cached = this.index.cachedBytes()
     return {
       blobs: this.index.count(),
-      bytes: this.index.totalBytes(),
+      // `bytes` es lo que ocupa el disco (lo que mira la cuota); `totalBytes` es
+      // el inventario entero, que con bucket es mayor porque incluye lo desalojado.
+      bytes: cached,
+      totalBytes: this.index.totalBytes(),
       maxBytes: this.maxBytes || null,
+      backed: this.store.backed === true,
       dir: this.dir
     }
   }
@@ -135,18 +150,38 @@ export class ContentNode {
    * (los bytes huérfanos se re-borran en el próximo GC vía índice… el índice
    * es la fuente de verdad de qué existe).
    */
+  /**
+   * Libera espacio. Hace DOS cosas distintas y conviene no confundirlas (§15.11):
+   *
+   *  · **Caducar** (`ttl` vencido) es borrar de verdad: se va la fila, los bytes
+   *    locales y —si hay bucket— también los de allí. Es lo que se pidió al subir.
+   *  · **Desalojar** por cuota es tirar una copia caliente. Con bucket detrás solo
+   *    toca lo que el bucket YA confirmó (`remote = 1`) y **la fila se queda** con
+   *    `cached = 0`: si se fuera, el blob quedaría en el bucket sin ACL, sin dueño
+   *    y sin tipo. Sin bucket no hay segunda copia, así que desalojar ES destruir
+   *    y se comporta como hasta ahora.
+   */
   gc ({ needBytes = 0, now = Date.now() } = {}) {
     let freed = 0
-    const drop = ({ cid, size }) => {
+    const backed = this.store.backed === true
+
+    const destroy = ({ cid, size }) => {
       this.index.remove(cid)
       this.store.remove(cid).catch(() => {})
       freed += size
     }
-    for (const b of this.index.expired(now)) drop(b)
+    const evict = ({ cid, size }) => {
+      if (!backed) return destroy({ cid, size })
+      this.store.evict(cid).catch(() => {})
+      this.index.setCached(cid, false)
+      freed += size
+    }
+
+    for (const b of this.index.expired(now)) destroy(b)
     if (needBytes > freed) {
-      for (const b of this.index.evictable()) {
+      for (const b of this.index.evictable({ requireRemote: backed })) {
         if (freed >= needBytes) break
-        drop(b)
+        evict(b)
       }
     }
     return { freed }

@@ -37,6 +37,26 @@ export class Index {
     // columna a una base ya escrita en disco. `ADD COLUMN` con default NULL es
     // barato y no reescribe la tabla; si ya está, SQLite tira y se ignora.
     try { this.db.exec('ALTER TABLE blobs ADD COLUMN meta TEXT') } catch (_) { /* ya existía */ }
+
+    // Columnas de la CACHÉ (DISENO.md §15.11). Existen aunque no haya bucket: sin
+    // él, `remote` se queda en 0 y `cached` en 1 para siempre, y nada cambia.
+    //
+    //  · `remote`   — el bucket YA CONFIRMÓ estos bytes. Se pone a 1 con la
+    //                 confirmación, nunca al lanzar la subida: es el cerrojo que
+    //                 impide desalojar algo cuya única copia sigue siendo esta.
+    //  · `cached`   — los bytes están en el disco de esta máquina. Al desalojar se
+    //                 pone a 0 y la FILA SE QUEDA: si se fuera con los bytes, el
+    //                 blob quedaría en el bucket sin dueño, sin ACL y sin tipo.
+    //  · `lastRead` — para desalojar por último acceso y no por antigüedad. Un
+    //                 almacén ordena por edad; una caché, por uso.
+    for (const col of [
+      'remote INTEGER NOT NULL DEFAULT 0',
+      'cached INTEGER NOT NULL DEFAULT 1',
+      'lastRead INTEGER'
+    ]) {
+      try { this.db.exec(`ALTER TABLE blobs ADD COLUMN ${col}`) } catch (_) { /* ya existía */ }
+    }
+    this.db.exec('CREATE INDEX IF NOT EXISTS idx_blobs_evict ON blobs (pinned, cached, remote, lastRead)')
   }
 
   upsert ({ cid, size, mime, owner = null, enc = 0, acl = null, ttl = null, meta = null }) {
@@ -102,13 +122,56 @@ export class Index {
   }
 
   /**
-   * No-pineados más viejos primero (candidatos a GC por cuota).
+   * Candidatos a liberar espacio por cuota: no pineados, con bytes en disco, y
+   * **el menos usado primero** (DISENO.md §15.11). `COALESCE(lastRead, createdAt)`
+   * porque lo que nunca se ha leído cuenta por su fecha de subida.
+   *
+   * @param {{ requireRemote?: boolean }} [opts] `requireRemote` lo pone el backend
+   *   con bucket: entonces solo se desaloja lo que el bucket YA confirmó, porque
+   *   desalojar es tirar una copia caliente y sin la otra copia sería destruir.
    * @returns {{ cid: string, size: number }[]}
    */
-  evictable () {
+  evictable ({ requireRemote = false } = {}) {
+    return /** @type {{ cid: string, size: number }[]} */ (this.db.prepare(`
+      SELECT cid, size FROM blobs
+      WHERE pinned = 0 AND cached = 1 ${requireRemote ? 'AND remote = 1' : ''}
+      ORDER BY COALESCE(lastRead, createdAt) ASC
+    `).all())
+  }
+
+  /** Marca que estos bytes ya están confirmados en el bucket. */
+  setRemote (cid, remote = true) {
+    const { changes } = this.db.prepare('UPDATE blobs SET remote = ? WHERE cid = ?')
+      .run(remote ? 1 : 0, cid)
+    return changes > 0
+  }
+
+  /** Marca si los bytes están (o ya no) en el disco de esta máquina. */
+  setCached (cid, cached = true) {
+    const { changes } = this.db.prepare('UPDATE blobs SET cached = ? WHERE cid = ?')
+      .run(cached ? 1 : 0, cid)
+    return changes > 0
+  }
+
+  /** Anota que este blob se acaba de leer (es lo que ordena el desalojo). */
+  touch (cid, now = Date.now()) {
+    this.db.prepare('UPDATE blobs SET lastRead = ? WHERE cid = ?').run(now, cid)
+  }
+
+  /**
+   * Lo que aún NO está confirmado en el bucket: la cola de subida pendiente. Que
+   * esto sea una consulta y no una lista en memoria es a propósito — un reinicio
+   * a media subida no debe perder el pendiente.
+   */
+  pendingUpload (limit = 100) {
     return /** @type {{ cid: string, size: number }[]} */ (this.db.prepare(
-      'SELECT cid, size FROM blobs WHERE pinned = 0 ORDER BY createdAt ASC'
-    ).all())
+      'SELECT cid, size FROM blobs WHERE remote = 0 AND cached = 1 ORDER BY createdAt ASC LIMIT ?'
+    ).all(limit))
+  }
+
+  /** Bytes que ocupan disco AQUÍ (la cuota es de la caché, no del inventario). */
+  cachedBytes () {
+    return Number(this.db.prepare('SELECT COALESCE(SUM(size), 0) AS n FROM blobs WHERE cached = 1').get().n)
   }
 
   /**
