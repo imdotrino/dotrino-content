@@ -40,7 +40,7 @@ export class ContentNode {
    * Sube un stream. Si la cuota no alcanza, intenta GC de no-pineados; si aun
    * así no cabe, rechaza con code ENOSPC (no borra pineados jamás).
    */
-  async put (readable, { mime = 'application/octet-stream', enc = 0, ttl = null, acl = null } = {}) {
+  async put (readable, { mime = 'application/octet-stream', enc = 0, ttl = null, acl = null, meta = null } = {}) {
     const { cid, size, existed } = await this.store.put(readable, {
       maxBytes: this.maxBlobBytes || undefined
     })
@@ -51,7 +51,7 @@ export class ContentNode {
         throw Object.assign(new Error('cuota de disco excedida'), { code: 'ENOSPC' })
       }
     }
-    this.index.upsert({ cid, size, mime, owner: this.owner, enc, acl, ttl })
+    this.index.upsert({ cid, size, mime, owner: this.owner, enc, acl, ttl, meta })
     return { cid, size, mime, existed }
   }
 
@@ -67,6 +67,38 @@ export class ContentNode {
    */
   setAcl (cid, acl) {
     return this.index.setAcl(cid, acl)
+  }
+
+  /**
+   * Metadatos de presentación (nombre/título/descripción). Es lo único con lo que
+   * el permalink público arma su tarjeta (DISENO.md §7.3): sin esto una vista
+   * previa solo puede decir el tipo y el tamaño.
+   */
+  setMeta (cid, meta) {
+    return this.index.setMeta(cid, meta)
+  }
+
+  /** Enlaza la miniatura pública de un blob (la genera la app, no el node). */
+  setThumbnail (cid, thumbnailCid) {
+    return this.index.setThumbnail(cid, thumbnailCid)
+  }
+
+  /** Índice de lo servible al mundo (público y en claro). */
+  listPublic (opts) {
+    return this.index.listPublic(opts)
+  }
+
+  /**
+   * ¿Puede este blob salir del node por el HTTP público? Dos condiciones, y las
+   * dos se comprueban aquí —en el único sitio por donde salen los bytes— aunque
+   * `ops.acl` ya impida marcar público lo cifrado: un índice traído de otra
+   * versión, o tocado a mano, no debe poder abrir una puerta.
+   * @returns {any|null} los metadatos si es servible, null si no.
+   */
+  publicStat (cid) {
+    const meta = this.stat(cid)
+    if (!meta || meta.acl !== 'public' || meta.enc) return null
+    return meta
   }
 
   /** ReadStream del blob; range = { start, end } inclusivo. */

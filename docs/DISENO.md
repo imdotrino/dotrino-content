@@ -309,6 +309,12 @@ renovación de cert); migrarlo al paquete es tarea suya, con su republicación.
 HTTP, `Bearer <cert>` o Basic (como `here`) para operaciones autenticadas.
 Lectura pública/por-fragmento sin auth.
 
+**Dos servidores, y no se mezclan.** El de abajo es el **local** (loopback, sin auth,
+la vía de subida del propio aparato). El **público** (§7.2) es otro proceso HTTP con
+otras reglas y solo tres rutas: `GET|HEAD /c/<cid>` (imágenes públicas comprobadas,
+bajo el tope), `GET /p/<cid>` (el permalink con la tarjeta) y `GET /robots.txt` +
+`/health`. Nada de subir, borrar ni listar por ahí.
+
 ```
 POST   /c                      # subir (streaming). body = bytes (ya cifrados si privado)
                                #   → { cid, size, mime }
@@ -365,38 +371,82 @@ consumiría el primer lector.
 > son la ventana de descubrimiento, no almacenamiento. Dotrino hospeda **su**
 > contenido; quien quiera otro content node se lo monta y sostiene el suyo.
 
-### 7.2. Modo público HTTP: sí, pero SOLO en el node del dueño (Fase 3, opt-in)
+### 7.2. Modo público HTTP: SOLO vistas previas, y solo en el node del dueño
 
-El core ya tiene el servidor HTTP (`src/server.js`: `GET/HEAD /c/<cid>` con
-`Range`/206, `ETag=cid`, `immutable`, 304). Hoy escucha en `127.0.0.1` sin auth;
-exponerlo es abrir el bind y ponerle reglas, no escribir transporte nuevo.
+> **Reencuadrado por el dueño el 2026-08-21, e IMPLEMENTADO** (`src/public.js`,
+> `--public`). La pregunta que lo cerró fue suya: *"podría incluso solo ser previews
+> para evitar tráfico y que el contenido sea interno"* y, después, *"podría ser
+> exclusivo de imágenes"*. Las dos van al mismo sitio, y el sitio es el correcto.
 
-- **Es un MODO del propio content node** (`--public`, apagado por defecto), **no
-  otra app.** Una pieza aparte que fuera a buscar contenido y lo re-sirviera desde
-  infra de Dotrino es exactamente el caso prohibido por la regla dura 3: un
-  CDN/relay gratis con nuestra factura.
-- **Requisitos antes de abrir el bind:** ACL de la Fase 2 (solo sale lo marcado
-  `acl: public` y en claro; lo cifrado y lo privado **no salen ni por error**),
-  **rate-limit por IP** y **techo de egress con corte** — un HTTP público en tu
-  máquina es donde aparecen el hotlinking y la factura.
+**Para qué existe este puerto: para que un enlace compartido tenga TARJETA.** No para
+servir contenido. El contenido se sigue abriendo en una app del ecosistema, con la
+referencia en el `#fragment` (§7). Lo que sale por aquí es una **derivada** —la
+miniatura— que el dueño marcó pública, no el archivo.
+
+Por qué se estrechó así, en vez de dejarlo como "un HTTP público con ACL":
+
+- **El costo vive en el tamaño.** Una miniatura son decenas de KB; un original,
+  megas. Es un factor ~100×, y la regla dura 2 dice que la transferencia la paga el
+  usuario: cuanto menos salga, más honesto es el trato.
+- **El riesgo también.** Un `/c/<cid>` abierto a originales es *hotlinking*: un
+  tercero embebe tu archivo en su web y la factura es tuya. Si lo máximo que sale
+  pesa 512 KB, el hotlinking deja de ser un problema económico.
+- **La tarjeta no necesita más.** X, LinkedIn y WhatsApp recomprimen a ~1200×630 de
+  todos modos.
+
+**Es un MODO del propio content node** (`--public`, apagado por defecto), **no otra
+app.** Una pieza aparte que fuera a buscar contenido y lo re-sirviera desde infra de
+Dotrino es exactamente el caso prohibido por la regla dura 3.
+
+**Los cinco cerrojos, todos implementados y con prueba propia** (`test/public.test.js`):
+
+| Cerrojo | Qué hace |
+|---|---|
+| **ACL** | solo sale lo marcado `public` **y en claro**. Lo cifrado no sale ni aunque alguien le ponga `public` a mano en el índice (`node.publicStat` es el segundo cerrojo, en el sitio por donde los bytes salen de verdad) |
+| **Solo imágenes de mapa de bits** | JPEG, PNG, GIF, WebP, AVIF. **El SVG queda fuera a propósito**: es un documento que ejecuta scripts, y servirlo desde tu dominio es regalarle un origen a quien lo suba |
+| **Bytes mágicos** | el `mime` lo declara **quien sube**, así que no se cree: se leen los primeros bytes del archivo y se sirve el tipo REAL (`sniffImage`). Un HTML subido como `image/png` responde 404 |
+| **Tope de tamaño** (`--public-max-kb`, 512 por defecto) | es lo que convierte esto en un servidor de miniaturas en vez de un CDN. `0` lo quita, y entonces sirve originales: es decisión del dueño y se avisa por consola |
+| **Límite por IP + techo de egress diario** | cubeta por minuto, y un techo que **se persiste en el índice** (un techo que se reinicia con el proceso no es un techo) y que corta **antes** de mandar una respuesta que no cabe, no cuando ya se pasó |
+
+Detalles que no son decoración:
+
+- **404, nunca 403**, para lo privado: un 403 confirmaría que ese `cid` está aquí.
+- **`robots.txt` prohíbe todo** por defecto. Las tarjetas sociales funcionan igual
+  (los rastreadores de redes piden la página cuando alguien pega el enlace; no
+  indexan), y la norma del ecosistema es que el contenido del usuario no se indexa.
+  `--public-index` lo levanta: es para la cuenta oficial y su contenido público, y
+  para nadie más.
+- **La miniatura la genera la APP al subir** (canvas en el navegador) y se sube como
+  **otro blob**, enlazado con la op `thumb` (`thumbnailCid`). El node no decodifica
+  imágenes: así sigue sin dependencias nativas y el trabajo lo pone el aparato, que es
+  el patrón del ecosistema. **Enlazar una miniatura no la publica**: tiene que estar
+  marcada `public` por su cuenta.
 - **Para la cuenta oficial el dueño es Dotrino**, así que su sembrador sirviendo su
-  propio contenido público por HTTP no rompe ninguna regla: es
-  *"Dotrino paga SU transferencia, no la tuya"* (§14).
+  propio contenido público no rompe ninguna regla: es *"Dotrino paga SU transferencia,
+  no la tuya"* (§14).
 
-### 7.3. Vista previa social (OG): NO la hay, y es aceptado
+### 7.3. Vista previa social (OG): la hay, y es el permalink `/p/<cid>`
 
-Un enlace con `#fragment` hacia una app estática **no puede** tener tarjeta propia
-en X ni en LinkedIn: el rastreador solo ve la cáscara de la app, la misma para
-todos los enlaces. **El dueño lo aceptó explícitamente (2026-08-17).** No se
-"arregla" moviendo la referencia a la ruta: eso la mandaría al servidor, que es lo
-que el `#fragment` existe para evitar.
+Un enlace con `#fragment` hacia una app estática **no puede** tener tarjeta propia en
+X ni en LinkedIn: el rastreador solo ve la cáscara de la app, la misma para todos los
+enlaces. Eso **sigue siendo cierto** y el dueño lo aceptó (2026-08-17).
 
-Lo único que sí puede tener tarjeta es el contenido **público de la cuenta
-oficial**, vía el modo del §7.2: una **envoltura HTML por pieza** (`/p/<cid>` con
-`og:title`/`og:description`/`og:image` y el enlace hacia eco) servida por el node
-de Dotrino. **Llamémoslo por su nombre: eso es un permalink y se va a parecer a un
-blog**, aunque solo lleve la tarjeta y el enlace; es legítimo, pero no se vende
-como otra cosa.
+Lo que cambió el 2026-08-21 es que el modo público (§7.2) **sí** da una tarjeta, y no
+solo a la cuenta oficial: cualquier dueño que encienda `--public` obtiene un
+**permalink por pieza** servido por **su propio node**:
+
+```
+GET /p/<cid>   →  HTML con og:title / og:description / og:image (+ twitter:card)
+                  y un botón "Abrir" hacia  <app>/#<ownerId>/<cid>
+```
+
+- La `og:image` apunta a `/c/<imgCid>` y **se comprueba antes de anunciarla**: es el
+  propio blob si es una imagen servible, o su miniatura si la tiene y es pública. Si
+  no hay ninguna, la tarjeta sale sin imagen en vez de con un enlace roto.
+- El botón "Abrir" lleva la referencia en el **`#fragment`**: el servidor de la app
+  nunca la ve. La tarjeta es pública; la referencia, no.
+- **Llamémoslo por su nombre: eso es un permalink y se va a parecer a un blog.** Es
+  legítimo, pero no se vende como otra cosa.
 
 ## 8. Co-empaquetado con el vault (una instalación)
 
@@ -463,9 +513,14 @@ solución de una app):
    3. **El sembrador se alimenta de los otros nodes** (§13.1): con el transporte
       puesto, es el mismo código — el sembrador pide `cid` como cualquier peer. Es lo
       que hace que un enlace no dependa de que el portátil esté encendido.
-   4. **Modo público HTTP opt-in** del node (§7.2, que ya tiene el `acl` que
-      necesita: faltan bind, límite por IP y techo de egress) y el **sembrador 24/7**
-      de la cuenta oficial.
+   4. ~~**Modo público HTTP opt-in**~~ **HECHO (2026-08-21), y adelantado a
+      propósito**: el dueño lo pidió primero porque es autocontenido (no depende del
+      anuncio ni del enjambre) y porque sin tarjeta un enlace compartido no se ve en
+      ninguna red. Quedó **más estrecho** de lo que este documento proponía: solo
+      **vistas previas** —imágenes comprobadas por sus bytes, con tope de tamaño,
+      límite por IP y techo de egress persistido— más el permalink `/p/<cid>`. Ver
+      §7.2 y §7.3. Falta el **sembrador 24/7** de la cuenta oficial, que es despliegue,
+      no código.
 5. **Fase 4 — integración** en la app piloto (**eco**, que es la que resuelve el
    `#fragment`) y registro en el catálogo.
 6. **Fase 5 — diferidos** (miniaturas, GC avanzado, replicación).

@@ -6,10 +6,12 @@ autohospedado por el usuario. Diseño completo en
 [`docs/DISENO.md`](./docs/DISENO.md); estado/continuación en
 [`docs/HANDOFF.md`](./docs/HANDOFF.md).
 
-> **Estado: Fase 2 (aparato del vault).** Al core local se le suma la identidad:
-> el node se enrola a tu bóveda y se puede administrar desde tus apps por el proxy,
-> sin abrir puertos. El HTTP sigue escuchando **solo en `127.0.0.1`**; exponerlo al
-> mundo es la Fase 3.
+> **Estado: Fase 2 (aparato del vault) + vistas previas públicas.** Al core local se
+> le suma la identidad: el node se enrola a tu bóveda y se puede administrar desde tus
+> apps por el proxy, sin abrir puertos. El HTTP de administración sigue escuchando
+> **solo en `127.0.0.1`**; con `--public` se abre, aparte, un puerto que sirve
+> **únicamente vistas previas** para que un enlace compartido tenga tarjeta en las
+> redes. El transporte P2P entre aparatos es lo que queda de la Fase 3.
 
 ## Uso
 
@@ -19,6 +21,10 @@ npx dotrino-content enroll <código>
 
 npx dotrino-content start [--port 3777] [--dir ~/.dotrino-content] \
   [--max-gb 50] [--max-blob-mb 512] [--gc-min 60] [--no-agent]
+
+# con vistas previas públicas (ver más abajo antes de encenderlo)
+npx dotrino-content start --public --public-port 3778 --public-egress-gb 5 \
+  --public-url https://content.tudominio.com
 ```
 
 Al enrolar, el node genera **su propia llave** y muestra un código que tienes que
@@ -43,6 +49,8 @@ list · stat <cid> · stats  qué guarda
 pin <cid> · unpin <cid>  retener / soltar
 remove <cid>             borrar
 acl <cid> public|private abrir o cerrar un blob (público es opt-in explícito)
+meta <cid> {…}           nombre/título/descripción para la tarjeta de la vista previa
+thumb <cid> <thumbCid>   enlazar la miniatura (otro blob, público por su cuenta)
 gc                       recolectar vencidos ahora
 ```
 
@@ -50,6 +58,38 @@ gc                       recolectar vencidos ahora
 trama es de 1 MB y su cola es de mensajes, no un almacén), y meter contenido por ahí
 sería usar la infraestructura del ecosistema como transporte. Subir es local por
 HTTP; entre aparatos, P2P desde la Fase 3.
+
+## Vistas previas públicas (`--public`, apagado por defecto)
+
+**Para qué es: para que un enlace que compartes tenga TARJETA** en X, LinkedIn,
+WhatsApp o Telegram. No es para servir tu contenido — eso se sigue abriendo en la app,
+con la referencia en el `#fragment`, que nunca llega a ningún servidor. Lo que sale por
+este puerto es la **miniatura** que tú marcaste pública, no el archivo.
+
+```
+GET|HEAD /c/<cid>   los bytes, si pasan TODOS los cerrojos de abajo
+GET      /p/<cid>   permalink: tarjeta (og:*) + botón "Abrir" hacia la app
+GET      /robots.txt · /health
+```
+
+Cinco cerrojos, y ninguno se puede saltar desde fuera:
+
+| | |
+|---|---|
+| **Solo lo público y en claro** | lo cifrado no sale ni marcado público a mano en el índice |
+| **Solo imágenes de mapa de bits** | JPEG, PNG, GIF, WebP, AVIF. **SVG no**: es un documento que ejecuta scripts |
+| **El tipo se comprueba en los bytes** | el `Content-Type` lo declara quien sube, así que no se cree: un HTML subido como `image/png` responde 404 |
+| **Tope de tamaño** (`--public-max-kb`, 512) | es lo que hace que esto sea un servidor de miniaturas y no un CDN. `0` lo quita y entonces sirve originales: el ancho de banda lo pagas tú |
+| **Límite por IP + techo diario** | `--public-rate` (60/min) y `--public-egress-gb`, que se **persiste** y corta antes de mandar una respuesta que no quepa |
+
+Lo privado responde **404, nunca 403**: un 403 confirmaría que ese `cid` está aquí. Y
+`robots.txt` prohíbe todo (las tarjetas funcionan igual: los rastreadores de las redes
+piden la página cuando alguien pega el enlace, no indexan). `--public-index` lo levanta.
+
+**La miniatura la genera tu app al subir** (con un canvas) y se sube como **otro
+blob**, que se enlaza con la op `thumb`. El node no decodifica imágenes: así no
+arrastra dependencias nativas. Enlazar una miniatura **no** la publica — se marca
+pública por su cuenta.
 
 ## API HTTP (localhost)
 

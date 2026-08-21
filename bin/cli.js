@@ -5,10 +5,17 @@
  *   dotrino-content enroll <código>     enlaza este node a tu vault (una vez)
  *   dotrino-content start [--port 3777] [--dir <ruta>] [--max-gb <n>] [--gc-min <min>]
  *                         [--no-agent]  arranca sin el plano de control
+ *                         [--public]    abre el puerto de VISTAS PREVIAS (§7.2)
  *
- * El HTTP sigue escuchando SOLO en loopback: es la vía local para subir y leer. Lo
- * que añade el enlace es el plano de CONTROL (administrar el node desde tus apps,
- * por el proxy, sin abrir puertos) — ver DISENO.md §7 y src/agent.js.
+ * El HTTP de administración sigue escuchando SOLO en loopback: es la vía local
+ * para subir y leer. Lo que añade el enlace es el plano de CONTROL (administrar el
+ * node desde tus apps, por el proxy, sin abrir puertos) — ver DISENO.md §7.
+ *
+ * `--public` levanta un SEGUNDO servidor, aparte y con sus propias reglas
+ * (src/public.js): sirve las **vistas previas** de lo que marcaste público —solo
+ * imágenes comprobadas, con tope de tamaño, límite por IP y techo de salida— para
+ * que un enlace compartido tenga tarjeta en las redes. No es un CDN y no lo va a
+ * ser: el contenido se sigue abriendo en la app.
  *
  * Env: DOTRINO_CONTENT_DIR (datos), DOTRINO_CONTENT_LINK_DIR (enlace), PORT.
  */
@@ -17,11 +24,15 @@ import path from 'node:path'
 import { parseArgs } from 'node:util'
 import { ContentNode } from '../src/node.js'
 import { createServer } from '../src/server.js'
+import { createPublicServer, DEFAULT_PUBLIC_PORT, DEFAULT_MAX_BYTES, DEFAULT_RATE_PER_MIN } from '../src/public.js'
 import { isLinked, linkDir, startContentAgent } from '../src/agent.js'
 
 const USAGE = `uso:
   dotrino-content enroll <código>
-  dotrino-content start [--port 3777] [--dir <ruta>] [--max-gb <n>] [--max-blob-mb <n>] [--gc-min <min>] [--no-agent]`
+  dotrino-content start [--port 3777] [--dir <ruta>] [--max-gb <n>] [--max-blob-mb <n>] [--gc-min <min>] [--no-agent]
+                        [--public] [--public-port 3778] [--public-host 0.0.0.0] [--public-max-kb 512]
+                        [--public-rate 60] [--public-egress-gb <n>] [--public-url https://…] [--app-url https://…]
+                        [--public-index]`
 
 const { values, positionals } = parseArgs({
   allowPositionals: true,
@@ -31,7 +42,17 @@ const { values, positionals } = parseArgs({
     'max-gb': { type: 'string' },
     'max-blob-mb': { type: 'string' },
     'gc-min': { type: 'string' },
-    'no-agent': { type: 'boolean' }
+    'no-agent': { type: 'boolean' },
+    // --- modo público (§7.2): apagado por defecto, y cada límite es un flag ---
+    public: { type: 'boolean' },
+    'public-port': { type: 'string' },
+    'public-host': { type: 'string' },
+    'public-max-kb': { type: 'string' },
+    'public-rate': { type: 'string' },
+    'public-egress-gb': { type: 'string' },
+    'public-url': { type: 'string' },
+    'app-url': { type: 'string' },
+    'public-index': { type: 'boolean' }
   }
 })
 
@@ -117,9 +138,41 @@ if (values['no-agent']) {
   console.log('plano de control: sin enlace (corre `dotrino-content enroll <código>` para administrarlo desde tus apps)')
 }
 
+// Modo público (§7.2). Va DESPUÉS del agente a propósito: el `owner` del node lo
+// resuelve el enlace con el vault, y es la mitad izquierda de la referencia
+// `ownerId + cid` que la tarjeta necesita para armar el enlace "Abrir".
+let publicServer = null
+if (values.public) {
+  const maxKb = values['public-max-kb'] !== undefined ? Number(values['public-max-kb']) : DEFAULT_MAX_BYTES / 1024
+  const publicPort = Number(values['public-port'] || DEFAULT_PUBLIC_PORT)
+  const publicHost = values['public-host'] || '0.0.0.0'
+  const egressGb = Number(values['public-egress-gb'] || 0)
+  publicServer = createPublicServer(node, {
+    maxBytes: maxKb * 1024,
+    ratePerMin: Number(values['public-rate'] || DEFAULT_RATE_PER_MIN),
+    maxEgressBytes: egressGb ? egressGb * 1024 ** 3 : 0,
+    publicUrl: values['public-url'] || null,
+    appUrl: values['app-url'] || undefined,
+    index: !!values['public-index'],
+    owner: node.owner
+  })
+  publicServer.listen(publicPort, publicHost, () => {
+    console.log(`vistas previas públicas en http://${publicHost}:${publicPort}  ·  solo imágenes` +
+      `${maxKb ? ` de hasta ${maxKb} KB` : ' (SIN tope de tamaño)'}` +
+      `${egressGb ? `  ·  techo de salida ${egressGb} GB/día` : ''}`)
+    if (!node.owner) {
+      console.log('  ojo: este node no está enlazado a un vault, así que las tarjetas salen sin enlace "Abrir"')
+    }
+    if (!maxKb) {
+      console.log('  ojo: sin tope de tamaño esto sirve originales, no vistas previas — y el ancho de banda lo pagas tú')
+    }
+  })
+}
+
 const shutdown = () => {
   clearInterval(gcTimer)
   try { agent?.close() } catch (_) {}
+  try { publicServer?.close() } catch (_) {}
   server.close(() => { node.close(); process.exit(0) })
 }
 process.on('SIGINT', shutdown)

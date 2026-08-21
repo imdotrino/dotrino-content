@@ -13,7 +13,10 @@ usuario**. Complementa al `@dotrino/store` (índice chico) y al `vault` (identid
 no los reemplaza.
 
 **Estado: Fases 1 y 2 implementadas** (core local + aparato del vault con plano de
-control cifrado) y **sin decisiones abiertas**. Siguiente = Fase 3. Detalle abajo.
+control cifrado) **y la Fase 3.4 —el modo público de VISTAS PREVIAS— también
+(2026-08-21)**, adelantada a pedido del dueño por ser autocontenida. Sin decisiones
+abiertas. Lo que queda de la Fase 3 es el **anuncio** (§3.1), el **transporte P2P** y
+el **sembrador** (§13.1). Detalle abajo.
 
 **Reglas duras del dueño (no negociables):**
 1. El contenido **siempre del lado del usuario, NUNCA en un server de Dotrino**.
@@ -157,7 +160,34 @@ y, con el enlace puesto, `start` levanta además el **plano de control** por el 
   cancelaba su temporizador de 15 s y dejaba el bucle de eventos retenido tras cada
   consulta al vault (invisible en un demonio, fatal en un proceso corto).
 
-**Siguiente: Fase 3 — exposición, y empieza por el ANUNCIO** (`DISENO.md` §3.1, nuevo):
+## Fase 3.4: HECHA (2026-08-21) — el modo público es de VISTAS PREVIAS
+
+`dotrino-content start --public` levanta un SEGUNDO servidor HTTP (`src/public.js`),
+aparte del de loopback, para que **un enlace compartido tenga tarjeta en las redes**.
+Reencuadre del dueño ese día: *"podría incluso solo ser previews para evitar tráfico y
+que el contenido sea interno"* + *"podría ser exclusivo de imágenes"*. Quedó más
+estrecho que lo que el diseño proponía, y mejor. Ver `DISENO.md` §7.2 y §7.3.
+
+- **Cinco cerrojos, uno por prueba** (11 pruebas nuevas): ACL (`public` + en claro);
+  **solo imágenes de mapa de bits** (SVG **fuera**: es un documento con scripts);
+  **bytes mágicos** (el `mime` lo dice quien sube, así que se comprueba el archivo —
+  un HTML subido como `image/png` da 404); **tope de tamaño** (`--public-max-kb`, 512
+  por defecto: es lo que lo hace un servidor de miniaturas y no un CDN); **límite por
+  IP + techo de egress diario persistido**, que corta *antes* de mandar una respuesta
+  que no cabe.
+- **Permalink `/p/<cid>`** con OG/Twitter y botón "Abrir" hacia `<app>/#<ownerId>/<cid>`
+  — la referencia va en el `#fragment`, así que el servidor de la app nunca la ve. La
+  `og:image` se **comprueba antes de anunciarla**.
+- **La miniatura la genera la APP** al subir (canvas) y se sube como otro blob,
+  enlazado con la op `thumb`. El node no decodifica imágenes: sigue sin dependencias
+  nativas. Enlazar una miniatura **no** la publica.
+- Ops nuevas: **`meta`** (nombre/título/descripción de presentación, recortados) y
+  **`thumb`**. Índice: columna `meta`, tabla `egress` y migración `ALTER TABLE` para
+  las bases ya escritas.
+- `robots.txt` = `Disallow: /` por defecto (`--public-index` lo levanta, y es para la
+  cuenta oficial). 404 y nunca 403 para lo privado.
+
+**Siguiente: el resto de la Fase 3 — y empieza por el ANUNCIO** (`DISENO.md` §3.1, nuevo):
 sin resolución `ownerId → nodes` no hay a quién pedirle los bytes. Orden: (1) el node se
 publica en `<nodeId>/content_<ownerId>` —con prefijo de nodo, que hay dos proxios
 federados y un canal sin prefijo es local a cada uno— y para el dueño se cablea

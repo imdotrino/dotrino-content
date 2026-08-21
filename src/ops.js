@@ -22,6 +22,8 @@
 /** Valores admitidos de ACL. Público es OPT-IN explícito; lo que no se dice, privado. */
 export const ACL = Object.freeze({ PUBLIC: 'public', PRIVATE: 'private' })
 
+import { isValidCid } from './blobstore.js'
+
 const ok = (rid, result) => ({ rid, ok: true, ...result })
 const fail = (rid, code, error) => ({ rid, ok: false, code, error })
 
@@ -77,6 +79,38 @@ export function createOps (node, { owner = null, version = null } = {}) {
       if (acl === ACL.PUBLIC && meta.enc) return fail(msg.rid, 'bad-request', 'an encrypted blob cannot be public')
       node.setAcl(cid, acl)
       return ok(msg.rid, { cid, acl })
+    }),
+
+    /**
+     * Metadatos de PRESENTACIÓN (nombre, título, descripción). Es lo único con lo
+     * que la vista previa pública arma su tarjeta (§7.3): sin esto, una tarjeta
+     * solo puede decir el tipo y el tamaño. No forma parte del `cid` —dos nombres
+     * para los mismos bytes son el mismo blob—, por eso se pone aparte.
+     */
+    meta: withBlob(async (msg, cid) => {
+      const src = msg.meta && typeof msg.meta === 'object' ? msg.meta : null
+      if (msg.meta !== null && !src) return fail(msg.rid, 'bad-request', 'meta must be an object or null')
+      // Se copian SOLO los campos conocidos y recortados: esto acaba en un HTML
+      // público, así que no se guarda lo que llegue.
+      const clean = src
+        ? Object.fromEntries(['name', 'title', 'description']
+          .map((k) => [k, typeof src[k] === 'string' ? src[k].trim().slice(0, 300) : null])
+          .filter(([, v]) => v))
+        : null
+      node.setMeta(cid, clean && Object.keys(clean).length ? clean : null)
+      return ok(msg.rid, { cid, meta: clean })
+    }),
+
+    /**
+     * Enlaza la miniatura de un blob. La miniatura es OTRO blob (subido por la
+     * app) y tiene que ser pública por su cuenta: enlazarla no la publica.
+     */
+    thumb: withBlob(async (msg, cid) => {
+      const t = msg.thumbnailCid
+      if (t !== null && !isValidCid(t)) return fail(msg.rid, 'bad-request', 'thumbnailCid must be a valid cid or null')
+      if (t && !node.stat(t)) return fail(msg.rid, 'not-found', 'the thumbnail is not in this node')
+      node.setThumbnail(cid, t)
+      return ok(msg.rid, { cid, thumbnailCid: t })
     }),
 
     /** Recolección de vencidos (lo que el temporizador hace solo, a pedido). */
