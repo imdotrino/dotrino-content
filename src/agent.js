@@ -40,7 +40,7 @@ export const isLinked = (dir = linkDir()) => {
  * @param {{
  *   node?: import('./node.js').ContentNode,
  *   dir?: string, proxyUrl?: string, version?: string|null,
- *   client?: any, quiet?: boolean, onRevoked?: () => void
+ *   client?: any, quiet?: boolean, onRevoked?: () => void, announce?: boolean
  * }} opts
  *   client: transporte inyectado — SOLO para pruebas (bus en memoria). En
  *   producción lo levanta el middleware con el proxy del ecosistema.

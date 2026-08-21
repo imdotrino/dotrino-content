@@ -371,6 +371,14 @@ consumiría el primer lector.
 > son la ventana de descubrimiento, no almacenamiento. Dotrino hospeda **su**
 > contenido; quien quiera otro content node se lo monta y sostiene el suyo.
 
+**Matiz añadido el 2026-08-21: `put`/`get` SÍ existen por el plano de control, con
+un tope de 256 KB.** No contradice lo de arriba, lo delimita: por ahí pasa lo que
+**es** un mensaje —un eco, una miniatura—, no contenido. Y por eso **no hay subida
+por partes**: trocear un archivo para colarlo por el proxy sería exactamente lo que
+esta sección prohíbe, solo que disfrazado. Lo que no cabe en un mensaje sube en local
+o va por P2P. El tope se anuncia en `hello` (`maxBytes`) para que el cliente no lo
+adivine.
+
 ### 7.2. Modo público HTTP: SOLO vistas previas, y solo en el node del dueño
 
 > **Reencuadrado por el dueño el 2026-08-21, e IMPLEMENTADO** (`src/public.js`,

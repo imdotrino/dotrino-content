@@ -7,12 +7,17 @@
  * devuelve la respuesta. Así se prueba entero sin levantar nada, y quien autoriza
  * (`agent.js`, vía `@dotrino/remote-agent`) queda en un solo sitio.
  *
- * LO QUE NO ESTÁ, Y NO ES UN OLVIDO: no hay `put`. Los bytes NO viajan por el
- * plano de control, porque el plano de control es el proxy del ecosistema: sus
- * tramas son de 1 MB y su cola es de mensajes, no un almacén (§7.1) — y meter
- * contenido por ahí sería usar la infraestructura de Dotrino como transporte, que
- * es justo la regla dura 3. Subir es local (HTTP en loopback) y, desde la Fase 3,
- * P2P por WebRTC.
+ * SOBRE `put` Y `get`: existen, pero con un TOPE DURO de un mensaje (256 KB), y
+ * eso no es una limitación técnica que haya que levantar después — es la frontera
+ * (§7.1). El plano de control es el proxy del ecosistema: sus tramas son de 1 MB y
+ * su cola es de mensajes, no un almacén, y meter contenido por ahí sería usar la
+ * infraestructura de Dotrino como transporte, que es la regla dura 3. Por eso NO
+ * hay subida por partes: si algo no cabe en un mensaje, es que no es un mensaje.
+ *
+ * Lo que sí es un mensaje y por eso pasa: **un post** (un eco pesa cientos de
+ * bytes) y **una miniatura** (decenas de KB). Los originales suben en local por
+ * HTTP y, entre aparatos, por P2P — que es lo que este tope deja pendiente a
+ * propósito en vez de disimularlo con un troceado.
  *
  * El contrato de errores es `code`, no la frase: quien recibe compara `code`
  * (`bad-request`, `not-found`, `unknown-op`, `failed`), que es lo estable. La frase
@@ -22,10 +27,33 @@
 /** Valores admitidos de ACL. Público es OPT-IN explícito; lo que no se dice, privado. */
 export const ACL = Object.freeze({ PUBLIC: 'public', PRIVATE: 'private' })
 
+/**
+ * Tope de lo que puede entrar o salir por el plano de control, en bytes crudos.
+ * En base64 dentro del sobre cifrado son ~350 KB, cómodos bajo la trama de 1 MB
+ * del proxy. **Es una frontera de diseño, no un parámetro a subir**: lo que no
+ * cabe aquí no es un mensaje y va por el otro camino.
+ */
+export const CONTROL_PLANE_MAX_BYTES = 256 * 1024
+
+import { Readable } from 'node:stream'
 import { isValidCid } from './blobstore.js'
 
 const ok = (rid, result) => ({ rid, ok: true, ...result })
 const fail = (rid, code, error) => ({ rid, ok: false, code, error })
+
+/**
+ * Metadatos de presentación, quedándose SOLO con los campos conocidos y
+ * recortados. Esto acaba en un HTML público (§7.3), así que no se guarda lo que
+ * llegue: ni campos de más ni textos sin fin.
+ * @returns {{name?:string,title?:string,description?:string}|null}
+ */
+function cleanMeta (src) {
+  if (!src || typeof src !== 'object') return null
+  const out = Object.fromEntries(['name', 'title', 'description']
+    .map((k) => [k, typeof src[k] === 'string' ? src[k].trim().slice(0, 300) : null])
+    .filter(([, v]) => v))
+  return Object.keys(out).length ? out : null
+}
 
 /**
  * Construye el despachador de operaciones de un node.
@@ -48,7 +76,57 @@ export function createOps (node, { owner = null, version = null } = {}) {
 
   const handlers = {
     /** Quién es este node: sirve de saludo y de comprobación de vida. */
-    hello: async (msg) => ok(msg.rid, { owner, version, stats: node.stats() }),
+    hello: async (msg) => ok(msg.rid, {
+      owner, version, stats: node.stats(), maxBytes: CONTROL_PLANE_MAX_BYTES
+    }),
+
+    /**
+     * Guardar algo pequeño desde otro aparato tuyo. Los bytes llegan en base64
+     * dentro del sobre ya cifrado de la sesión, en UN mensaje: no hay subida por
+     * partes y no la va a haber (ver la cabecera del archivo).
+     *
+     * Que el aparato esté autorizado ya lo comprobó `verifyChain` antes de que
+     * esto se llame; aquí solo se comprueba la forma y el tamaño.
+     */
+    put: async (msg) => {
+      if (typeof msg.data !== 'string') return fail(msg.rid, 'bad-request', 'data (base64) is required')
+      let buf
+      try { buf = Buffer.from(msg.data, 'base64') } catch { return fail(msg.rid, 'bad-request', 'data is not valid base64') }
+      if (!buf.length) return fail(msg.rid, 'bad-request', 'empty payload')
+      if (buf.length > CONTROL_PLANE_MAX_BYTES) {
+        return fail(msg.rid, 'too-large',
+          `the control plane carries up to ${CONTROL_PLANE_MAX_BYTES} bytes; upload larger blobs locally or peer to peer`)
+      }
+      const enc = msg.enc ? 1 : 0
+      // Mismo cerrojo que en `acl`, y por lo mismo: decir que algo cifrado es
+      // público solo engaña a quien lo mire, porque nadie sin la llave lo lee.
+      const acl = msg.acl === ACL.PUBLIC && !enc ? ACL.PUBLIC : ACL.PRIVATE
+      const ttlMs = Number(msg.ttl) || 0
+      const out = await node.put(Readable.from(buf), {
+        mime: typeof msg.mime === 'string' ? msg.mime : 'application/octet-stream',
+        enc,
+        acl,
+        ttl: ttlMs > 0 ? Date.now() + ttlMs : null,
+        meta: cleanMeta(msg.meta)
+      })
+      return ok(msg.rid, { ...out, acl })
+    },
+
+    /**
+     * Leer algo pequeño de vuelta (otro aparato tuyo, o el mismo tras reinstalar).
+     * Mismo tope, y por la misma razón: esto es el plano de control.
+     */
+    get: withBlob(async (msg, cid, meta) => {
+      if (meta.size > CONTROL_PLANE_MAX_BYTES) {
+        return fail(msg.rid, 'too-large',
+          `${meta.size} bytes do not fit in the control plane; fetch it locally or peer to peer`)
+      }
+      const chunks = []
+      for await (const c of node.read(cid)) chunks.push(c)
+      return ok(msg.rid, {
+        cid, size: meta.size, mime: meta.mime, enc: meta.enc, data: Buffer.concat(chunks).toString('base64')
+      })
+    }),
 
     list: async (msg) => ok(msg.rid, { blobs: node.list() }),
 
@@ -88,16 +166,11 @@ export function createOps (node, { owner = null, version = null } = {}) {
      * para los mismos bytes son el mismo blob—, por eso se pone aparte.
      */
     meta: withBlob(async (msg, cid) => {
-      const src = msg.meta && typeof msg.meta === 'object' ? msg.meta : null
-      if (msg.meta !== null && !src) return fail(msg.rid, 'bad-request', 'meta must be an object or null')
-      // Se copian SOLO los campos conocidos y recortados: esto acaba en un HTML
-      // público, así que no se guarda lo que llegue.
-      const clean = src
-        ? Object.fromEntries(['name', 'title', 'description']
-          .map((k) => [k, typeof src[k] === 'string' ? src[k].trim().slice(0, 300) : null])
-          .filter(([, v]) => v))
-        : null
-      node.setMeta(cid, clean && Object.keys(clean).length ? clean : null)
+      if (msg.meta !== null && (!msg.meta || typeof msg.meta !== 'object')) {
+        return fail(msg.rid, 'bad-request', 'meta must be an object or null')
+      }
+      const clean = cleanMeta(msg.meta)
+      node.setMeta(cid, clean)
       return ok(msg.rid, { cid, meta: clean })
     }),
 
@@ -131,4 +204,4 @@ export function createOps (node, { owner = null, version = null } = {}) {
   }
 }
 
-export default { createOps, ACL }
+export default { createOps, ACL, CONTROL_PLANE_MAX_BYTES }

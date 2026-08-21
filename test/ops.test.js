@@ -10,7 +10,8 @@ import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { Readable } from 'node:stream'
 import { ContentNode } from '../src/node.js'
-import { createOps, ACL } from '../src/ops.js'
+import { createHash } from 'node:crypto'
+import { createOps, ACL, CONTROL_PLANE_MAX_BYTES } from '../src/ops.js'
 
 const OWNER = 'abcdef0123456789'
 
@@ -132,8 +133,116 @@ test('remove borra, y stats/gc responden', async () => {
 
 test('una op desconocida se rechaza por code, no por la frase', async () => {
   await withNode(async (node, ops) => {
-    assert.equal((await ops({ op: 'put', rid: 18 })).code, 'unknown-op')
+    // Esta prueba comprobaba, con `put`, que subir por el plano de control NO
+    // existía. Ya existe (2026-08-21) y la frontera pasó a ser el TOPE de un
+    // mensaje, que se prueba más abajo. Lo que sigue valiendo es el contrato de
+    // errores: se compara por `code`, nunca por la frase.
+    assert.equal((await ops({ op: 'inventada', rid: 18 })).code, 'unknown-op')
     assert.equal((await ops({ rid: 19 })).code, 'bad-request')
     assert.equal((await ops(null)).code, 'bad-request')
+  })
+})
+
+// --- put / get por el plano de control (con el tope como frontera, no como bug) ---
+
+test('put guarda desde otro aparato, estampa el owner y devuelve el cid del contenido', async () => {
+  await withNode(async (node, ops) => {
+    const data = Buffer.from('un eco de prueba, que pesa lo que pesa un mensaje')
+    const res = await ops({ rid: 1, op: 'put', data: data.toString('base64'), mime: 'application/json' })
+    assert.equal(res.ok, true)
+    assert.equal(res.cid, `sha256-${createHash('sha256').update(data).digest('hex')}`)
+    assert.equal(res.size, data.length)
+    // Nace privado: público es opt-in explícito, aquí como en todas partes.
+    assert.equal(res.acl, ACL.PRIVATE)
+    assert.equal(node.stat(res.cid).owner, OWNER)
+  })
+})
+
+test('get devuelve los mismos bytes, y put dos veces es el mismo blob', async () => {
+  await withNode(async (node, ops) => {
+    const data = Buffer.from('ida y vuelta')
+    const first = await ops({ rid: 1, op: 'put', data: data.toString('base64'), mime: 'text/plain' })
+    const again = await ops({ rid: 2, op: 'put', data: data.toString('base64'), mime: 'text/plain' })
+    assert.equal(again.cid, first.cid)
+    assert.equal(again.existed, true)
+
+    const got = await ops({ rid: 3, op: 'get', cid: first.cid })
+    assert.equal(got.ok, true)
+    assert.equal(Buffer.from(got.data, 'base64').toString(), 'ida y vuelta')
+    assert.equal(got.mime, 'text/plain')
+  })
+})
+
+test('lo que no cabe en UN mensaje no pasa: es la frontera, no un límite a subir', async () => {
+  await withNode(async (node, ops) => {
+    const big = Buffer.alloc(CONTROL_PLANE_MAX_BYTES + 1, 7)
+    const res = await ops({ rid: 1, op: 'put', data: big.toString('base64') })
+    assert.equal(res.ok, false)
+    assert.equal(res.code, 'too-large')
+    // Y no hay `put.begin`/`put.chunk`: trocear sería disimular la frontera.
+    assert.equal((await ops({ rid: 2, op: 'put.begin', size: 1 })).code, 'unknown-op')
+  })
+})
+
+test('get tampoco saca por el plano de control lo que no es un mensaje', async () => {
+  await withNode(async (node, ops) => {
+    const { cid } = await node.put(Readable.from(Buffer.alloc(CONTROL_PLANE_MAX_BYTES + 1)), { mime: 'video/mp4' })
+    assert.equal((await ops({ rid: 1, op: 'get', cid })).code, 'too-large')
+  })
+})
+
+test('put no puede colar un blob cifrado como público', async () => {
+  await withNode(async (node, ops) => {
+    const res = await ops({ rid: 1, op: 'put', data: Buffer.from('cifrado').toString('base64'), enc: 1, acl: ACL.PUBLIC })
+    assert.equal(res.acl, ACL.PRIVATE)
+    assert.equal(node.stat(res.cid).acl, ACL.PRIVATE)
+  })
+})
+
+test('put admite la presentación de una vez, y descarta lo que no es campo conocido', async () => {
+  await withNode(async (node, ops) => {
+    const res = await ops({
+      rid: 1,
+      op: 'put',
+      data: Buffer.from('con tarjeta').toString('base64'),
+      mime: 'image/png',
+      acl: ACL.PUBLIC,
+      meta: { title: '  Una foto  ', description: 'x'.repeat(400), owner: 'intento de colarse' }
+    })
+    assert.equal(res.acl, ACL.PUBLIC)
+    const meta = JSON.parse(node.stat(res.cid).meta)
+    assert.equal(meta.title, 'Una foto')
+    assert.equal(meta.description.length, 300)
+    assert.equal(meta.owner, undefined, 'solo se guardan los campos conocidos')
+  })
+})
+
+test('put rechaza lo que no es un payload', async () => {
+  await withNode(async (node, ops) => {
+    assert.equal((await ops({ rid: 1, op: 'put' })).code, 'bad-request')
+    assert.equal((await ops({ rid: 2, op: 'put', data: '' })).code, 'bad-request')
+  })
+})
+
+test('hello dice cuánto entra por aquí, para que el cliente no lo adivine', async () => {
+  await withNode(async (node, ops) => {
+    assert.equal((await ops({ rid: 1, op: 'hello' })).maxBytes, CONTROL_PLANE_MAX_BYTES)
+  })
+})
+
+test('meta y thumb: la tarjeta se puede poner después, y una miniatura ajena no cuela', async () => {
+  await withNode(async (node, ops) => {
+    const foto = await ops({ rid: 1, op: 'put', data: Buffer.from('foto').toString('base64'), mime: 'image/png' })
+    const mini = await ops({ rid: 2, op: 'put', data: Buffer.from('mini').toString('base64'), mime: 'image/webp' })
+
+    assert.equal((await ops({ rid: 3, op: 'meta', cid: foto.cid, meta: { name: 'x.png' } })).meta.name, 'x.png')
+    assert.equal((await ops({ rid: 4, op: 'meta', cid: foto.cid, meta: null })).meta, null)
+
+    assert.equal((await ops({ rid: 5, op: 'thumb', cid: foto.cid, thumbnailCid: mini.cid })).thumbnailCid, mini.cid)
+    assert.equal(node.stat(foto.cid).thumbnailCid, mini.cid)
+    // Una miniatura que este node no tiene no se puede enlazar: sería una tarjeta rota.
+    const ajena = 'sha256-' + '0'.repeat(64)
+    assert.equal((await ops({ rid: 6, op: 'thumb', cid: foto.cid, thumbnailCid: ajena })).code, 'not-found')
+    assert.equal((await ops({ rid: 7, op: 'thumb', cid: foto.cid, thumbnailCid: 'no-es-un-cid' })).code, 'bad-request')
   })
 })

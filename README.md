@@ -44,7 +44,9 @@ Con el node enlazado, tus propias apps —cualquier aparato con un certificado d
 misma** bóveda— pueden administrarlo a distancia dentro de una sesión cifrada:
 
 ```
-hello                    quién es el node (owner, versión, uso de disco)
+hello                    quién es el node (owner, versión, uso de disco, tope)
+put {data,mime,…}        guardar algo pequeño desde otro aparato tuyo (≤ 256 KB)
+get <cid>                leerlo de vuelta (≤ 256 KB)
 list · stat <cid> · stats  qué guarda
 pin <cid> · unpin <cid>  retener / soltar
 remove <cid>             borrar
@@ -54,10 +56,13 @@ thumb <cid> <thumbCid>   enlazar la miniatura (otro blob, público por su cuenta
 gc                       recolectar vencidos ahora
 ```
 
-**No hay `put` por aquí, y no es un olvido:** los bytes no viajan por el proxy (su
-trama es de 1 MB y su cola es de mensajes, no un almacén), y meter contenido por ahí
-sería usar la infraestructura del ecosistema como transporte. Subir es local por
-HTTP; entre aparatos, P2P desde la Fase 3.
+**`put` y `get` tienen un tope duro de 256 KB, y eso NO es un límite a subir: es la
+frontera.** El plano de control es el proxy del ecosistema —trama de 1 MB, cola de
+mensajes, no un almacén—, así que por aquí pasa lo que **es** un mensaje: un post (un
+eco pesa cientos de bytes) y una miniatura (decenas de KB). Por eso **no hay subida
+por partes**: trocear sería disimular la frontera y acabar usando la infraestructura
+del ecosistema como transporte. Los originales suben en local por HTTP y, entre
+aparatos, por P2P.
 
 ## Vistas previas públicas (`--public`, apagado por defecto)
 
