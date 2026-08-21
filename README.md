@@ -124,6 +124,38 @@ GET    /stats              nº de blobs, bytes usados, cuota
   del node cuando llegue el modo público, y un blob cifrado no puede marcarse
   público (nadie sin la llave podría leerlo).
 
+## `@dotrino/content-client` (lo que usa una app)
+
+El cliente de navegador vive en [`lib/`](./lib) y se publica desde este mismo repo,
+igual que `dotrino-vault` publica su lib. Está aquí a propósito: el protocolo —los
+nombres de las ops, el tope de 256 KB, el formato de la referencia— es de las dos
+puntas, y separarlas en dos repos es la forma de que acaben diciendo cosas distintas.
+
+```js
+import { ContentClient, buildUrl } from '@dotrino/content-client'
+
+const cc = await ContentClient.connect({ link })   // link del vault: { id, cert, iss }
+const ref = await cc.put(bytes, { mime: 'image/png' })   // cifra por defecto
+const url = buildUrl(ref)      // https://eco.dotrino.com/#<owner>/<cid>/<llave>
+const back = await cc.get(ref) // comprueba el hash antes de devolver nada
+```
+
+- **Cifra por defecto** (§4): el node guarda ciphertext y la llave sale en la
+  referencia, para el `#fragment`. Con `encrypt: false` queda en claro, que es lo que
+  hace falta para poder marcarlo `public` y que tenga tarjeta.
+- **`connect()` falla con `code: 'no-node'`** si no tienes ninguno encendido, en vez
+  de esperar. Es lo esperable y **la app tiene que saber seguir sin node**: al
+  `@dotrino/store` va lo que debe estar siempre disponible; aquí van los bytes.
+- **`get()` comprueba el hash** de lo que llega: el `cid` **es** el hash, así que unos
+  bytes que no cuadren se rechazan vengan de donde vengan.
+- **Miniaturas** (`@dotrino/content-client/thumb`): `makeThumbnail()` en canvas y
+  `putImageWithThumbnail()`, que sube el original **cifrado y privado** y la miniatura
+  **en claro y pública** — que es el reparto que hace que haya tarjeta sin publicar el
+  archivo.
+- **Todavía NO lee el contenido de otro usuario**: hoy solo se abre sesión con un
+  aparato de tu misma acta. Un tercero con tu enlace ve la vista previa (si la
+  encendiste) y podrá pedir los bytes cuando exista el transporte P2P.
+
 ## Tests
 
 ```sh

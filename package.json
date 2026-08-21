@@ -12,7 +12,7 @@
   "scripts": {
     "start": "node bin/cli.js start",
     "test": "node --test 'test/**/*.test.js'",
-    "type-check": "tsc --noEmit"
+    "type-check": "tsc --noEmit && tsc --noEmit -p lib"
   },
   "engines": {
     "node": ">=22.5"

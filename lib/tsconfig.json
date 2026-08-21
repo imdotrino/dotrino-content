@@ -1,0 +1,18 @@
+{
+  "//": "El cliente corre en el NAVEGADOR (canvas, WebCrypto, btoa), así que se comprueba con la librería DOM y sin los tipos de Node: si algo de aquí solo existe en Node, es un error, no un detalle.",
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "lib": ["ES2022", "DOM"],
+    "allowJs": true,
+    "checkJs": true,
+    "strict": false,
+    "noImplicitAny": false,
+    "strictNullChecks": false,
+    "skipLibCheck": true,
+    "noEmit": true,
+    "types": []
+  },
+  "include": ["*.js"]
+}
