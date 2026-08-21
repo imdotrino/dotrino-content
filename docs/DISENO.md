@@ -967,3 +967,28 @@ Tres cosas que se derivan de esa tabla y que no hay que perder:
 - **El bucket va POR DEBAJO de las tres.** La interfaz vive en `blobstore.js`, así que
   ninguna de las tres puertas se entera del cambio: el mismo `GET /c/<cid>` responde
   igual saque los bytes del disco, de la caché (§15.11) o del bucket.
+
+### 15.13. La URL del bucket es un ATAJO, nunca el enlace
+
+> Cerrado con el dueño el 2026-08-21: *"las cuentas que incluyen un bucket tendrán esa
+> opción de mostrar contenido público; si no, el contenido simplemente vive dentro de la
+> red de Dotrino, y eso está bien"*.
+
+Tener bucket es una **capacidad de la cuenta**, así que la app no puede darla por
+supuesta. La forma correcta de que no importe:
+
+**El enlace compartible sigue siendo `app/#<ownerId>/<cid>` — jamás la URL del bucket.**
+Si el enlace fuera la URL, cambiar de proveedor, apagar el bucket o despublicar rompería
+todo lo repartido hasta entonces. El direccionamiento por contenido existe justo para
+que **el enlace sobreviva al sitio donde viven los bytes**; meter el sitio dentro del
+enlace tira esa propiedad a la basura.
+
+- **La URL, si existe, la anuncia el node** para ese `cid` (una capacidad más, junto a
+  lo que ya contesta `stat`). La app **intenta el atajo y, si no hay, va por la red**.
+  Ni pregunta antes ni se rompe si desaparece.
+- **Se verifica igual, venga de donde venga.** El receptor comprueba el `cid` de los
+  bytes que recibió, así que el atajo **no es una concesión de confianza**: un bucket
+  comprometido no puede colar otros bytes, solo dejar de responder. Es la misma razón
+  por la que da igual quién siembre un `cid` en el enjambre (§13).
+- **Y por eso el atajo se puede quitar y poner sin avisar a nadie**: cambiar de
+  proveedor, apagar el bucket o volver a encenderlo no invalida un solo enlace.
