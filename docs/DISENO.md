@@ -906,3 +906,36 @@ bucket.
 **Para qué sirve de verdad, con R2 detrás:** no para ahorrar egress —es cero—, sino
 para la **latencia** y para el **tráfico del propio VPS**, que sí es finito. Con un
 proveedor que cobre salida, además, ahorra dinero en cada lectura repetida.
+
+### 15.12. Sin bucket no cambia nada: las tres puertas del node
+
+> Precisión del dueño el 2026-08-21: *"todo lo que hablamos es cuando se integra con un
+> bucket, pero el content server puede servir contenido público y privado de forma local
+> usando la red de Dotrino y el puerto HTTP"*. Correcto, y ya está implementado.
+
+**Todo el §15 es un backend, no un requisito.** El node sirve exactamente lo mismo con
+bucket que sin él; lo único que cambia es de dónde salen los bytes. Es el patrón del
+ecosistema otra vez (`CLAUDE.md`): el aparato cumple el rol, y lo dedicado solo añade.
+
+Las puertas son tres y conviene no confundirlas, porque sirven cosas distintas:
+
+| Puerta | Qué sirve | A quién | Dónde escucha |
+|---|---|---|---|
+| **API local** (`server.js`) | **todo**: público y privado (lo privado, cifrado — descifra quien tenga la llave) | a las herramientas del propio dueño | **`127.0.0.1` y punto** |
+| **Red Dotrino** (WebRTC + plano de control ≤256 KB) | todo, con ACL y dentro de sesión cifrada y autorizada | a quien tenga la referencia y pase la ACL | por el proxy |
+| **Puerto público** (`public.js`, `--public`) | **solo** lo marcado `public` y en claro | a internet | `0.0.0.0`, **apagado por defecto** |
+
+Tres cosas que se derivan de esa tabla y que no hay que perder:
+
+- **La API local sirve todo porque está atada a `127.0.0.1`, y por eso NO tiene
+  autenticación ni se puede exponer.** El bind está fijo en `bin/cli.js` a propósito:
+  no hay `--host` para ella, y no debe haberlo. Si algún día hace falta llegar desde
+  otra máquina, la respuesta no es abrir ese puerto — es la red Dotrino, que ya trae
+  identidad, ACL y cifrado.
+- **El puerto público sigue siendo el de las vistas previas** (§7.2): imágenes de mapa
+  de bits comprobadas por sus bytes, ≤512 KB. `--public-max-kb 0` sirve originales, es
+  una decisión consciente del dueño y se avisa por consola. Lo que **no** hace ese
+  puerto, con bucket o sin él, es servir algo privado: es el primer cerrojo.
+- **El bucket va POR DEBAJO de las tres.** La interfaz vive en `blobstore.js`, así que
+  ninguna de las tres puertas se entera del cambio: el mismo `GET /c/<cid>` responde
+  igual saque los bytes del disco, de la caché (§15.11) o del bucket.
