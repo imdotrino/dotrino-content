@@ -359,6 +359,11 @@ https://eco.dotrino.com/#<ownerId>/<cid>[/<llave>]     ← la referencia va en e
   *descubrimiento* geo; el enlace se resuelve solo con el fragmento, así que vive
   mientras haya un node sembrando ese `cid`.
 
+**Añadido el 2026-08-21 (§15):** lo **público** sí puede salir por una **URL directa
+del bucket del dueño** — es contenido en claro que él marcó público, y no toca esta
+regla. Lo **privado** no tiene URL de ninguna clase: descansa cifrado y se entrega solo
+por aquí.
+
 ### 7.1. El proxy NO transporta contenido (medido, no supuesto)
 
 La cola offline del proxy es del **plano de control**, y sus topes lo dicen:
@@ -540,7 +545,11 @@ solución de una app):
    node de su autor, con **durabilidad opt-in por eco** y lo efímero como default, tal
    como pedía §3.2. Falta que eco resuelva el `#fragment` **de otra persona**, que
    depende del P2P.
-6. **Fase 5 — diferidos** (miniaturas, GC avanzado, replicación).
+6. **Backend de bucket (§15) — DEFINIDO, sin implementar.** Interfaz `fs` | `s3` en
+   `blobstore.js`, credenciales por el vault (`ns:content`), público a URL directa y
+   privado cifrado sin URL. Es independiente del P2P: se puede hacer antes, después o
+   en paralelo.
+7. **Fase 5 — diferidos** (miniaturas, GC avanzado, replicación).
 
 ## 12. Preguntas abiertas para el dueño
 
@@ -593,6 +602,10 @@ arquitectura que las cumple:
 
 **El objetivo, en una línea: que lo compartible esté disponible aunque solo quede
 encendido el sembrador.**
+
+> **Y desde el §15 el sembrador ya no necesita disco:** sus bytes pueden descansar en
+> un bucket del dueño (cifrados los privados), así que lo que sigue describe de dónde
+> saca un `cid` que aún no tiene, no dónde lo guarda.
 
 **No es un subsistema nuevo: es el sembrador comportándose como un consumidor más del
 enjambre** (§13). No hay un protocolo de replicación aparte, ni un "modo maestro", ni
@@ -656,3 +669,189 @@ especial" ni ruta privilegiada; Dotrino es otro usuario de su propio protocolo.
 > financiado** (perk de plan patrocinador, `MODELO-NEGOCIO.md`), nunca como default
 > gratis. La cuenta oficial es **ejemplo, no excepción**: no se da un privilegio que
 > rompa las reglas para el resto.
+
+## 15. El bucket: el almacén barato del node — CERRADO (2026-08-21)
+
+> Decidido por el dueño. Nace de una pregunta suya: *"quiero usar la capacidad de S3
+> o dime otro almacén que podamos integrar de bajo costo y alta disponibilidad"*, y la
+> cerró él mismo con el corte que ordena todo lo de abajo:
+>
+> > *"los públicos se podría dar la url directa de S3 o Cloudflare sin problema, el
+> > privado sí debe obligadamente usar la red de Dotrino WebRTC/proxy"*
+> > *"puede estar privado en el bucket por espacio más que nada, pero estaría cifrado"*
+
+**El bucket es el DISCO del node, no una puerta de salida.** Esa frase es toda la
+sección; lo demás son sus consecuencias.
+
+| | Público | Privado |
+|---|---|---|
+| Cómo se guarda | en claro | **cifrado** (AES-GCM, llave por blob, §4) |
+| Dónde | bucket público del dueño | bucket privado del dueño |
+| **Cómo se entrega** | **URL directa** del bucket/CDN | **solo por la red Dotrino** (WebRTC, señalización por el proxy; ≤256 KB por el plano de control) |
+| Quién paga | el dueño | el dueño |
+
+**El invariante, que se puede probar:** *lo que sale por una URL está en claro y
+marcado `public`; lo cifrado no tiene URL.* Es el mismo cerrojo que ya vive en
+`node.publicStat` (*"lo cifrado no sale ni aunque alguien le ponga `public` a mano en
+el índice"*), llevado al almacenamiento.
+
+**Esto NO es el "bucket cifrado (D)" que descartó el §7.** Aquel era un bucket **de
+Dotrino** con el contenido de todos, y sigue descartado. Aquí la cuenta es **del
+usuario**: el bucket es su disco, igual que hoy lo es `blobs/aa/bb/<cid>`. La regla
+dura del §13 se cumple literal — el contenido no está en un server de Dotrino y la
+transferencia la paga su dueño.
+
+### 15.1. Dos buckets, no dos carpetas
+
+No es purismo, es que **un bucket no puede ser las dos cosas**: el público necesita el
+acceso público **encendido** y un dominio conectado; el privado necesita que **no lo
+esté**. Eso se configura por bucket, así que una carpeta "privada" dentro del bucket
+público hereda su superficie de exposición. Cuestan lo mismo (se paga por byte).
+
+- **Credenciales distintas para cada uno.** Las del público acaban en más sitios
+  (configuración, un despliegue, una nota); que esas no puedan leer lo privado es
+  gratis y evita el peor accidente posible.
+- Ambas viven en el **vault**, en `ns:content`, y llegan al node **selladas** por el
+  mismo camino por el que los proxios reciben sus llaves de TURN. No se escriben en un
+  `.env` ni pasan por ninguna app.
+
+### 15.2. Los cuatro flujos
+
+**Subir algo público**
+
+1. La app tiene los bytes **en claro** y genera la miniatura en el navegador (§7.2).
+2. Los manda al node del dueño (local si es la PWA; plano de control si ≤256 KB; P2P
+   cuando exista).
+3. El node calcula `cid = sha256(claro)`, lo guarda y lo marca `public`.
+4. El node **comprueba el tipo real por los bytes mágicos** (§15.5) y sube el objeto:
+   clave `<cid>`, `Content-Type` el real, `Cache-Control: public, max-age=31536000,
+   immutable` (es direccionado por contenido: nunca cambia, no hay que invalidar nada).
+5. La URL pública es directa y permanente: `https://<dominio-del-bucket>/<cid>`.
+
+**Leer algo público:** un `GET`. Sin nada del ecosistema en medio — y eso es una
+ventaja de privacidad, no un descuido: **quien lee no se identifica ante nada nuestro**.
+
+**Subir algo privado**
+
+1. La app **cifra antes de subir** (llave por blob) y `cid = sha256(ciphertext)`.
+2. El node recibe ciphertext, lo guarda y lo sube al **bucket privado**.
+3. El enlace es `app/#<ownerId>/<cid>/<llave>`: la llave en el fragmento, que no llega
+   a ningún servidor (§7).
+
+**Leer algo privado (un tercero con el enlace)**
+
+1. La app lee la referencia y pregunta por los proxios qué nodes del dueño están vivos
+   (`announce.js` / `findNodes`).
+2. Señalización por el proxy → canal WebRTC con uno de ellos.
+3. El node comprueba la ACL, **lee del bucket privado con `Range` y empuja los trozos
+   por el canal**; el receptor verifica el hash y descifra con la llave del fragmento.
+4. Si son ≤256 KB, puede ir por `get` del plano de control, que ya existe.
+5. Si no hay ningún node encendido, **no está disponible** (§13, sin atajo).
+
+El paso 3 es la clave de por qué esto no viola nada: **los bytes privados salen del
+bucket hacia el node, y del node hacia el peer por WebRTC.** Nadie de fuera recibe
+jamás una URL del bucket privado, ni firmada ni de ningún tipo. *No hay `presigned
+GET` para lo privado, y no se añade después: sería una segunda puerta, fuera de la
+identidad, que no se revoca y no sabe a quién sirve.*
+
+### 15.3. Qué gana esto, y qué NO arregla
+
+Gana **espacio**, que era el motivo: el sembrador 24/7 deja de necesitar disco (el VPS
+del proxio tiene 8,6 GB en total) y deja de ser el sitio donde se pierden los bytes si
+se muere la máquina. El bucket da **durabilidad**.
+
+**No da disponibilidad a lo privado.** Como la entrega sigue siendo por WebRTC, un
+enlace privado sigue necesitando **un node encendido**. El bucket no es alcanzable por
+sí solo para lo privado, y eso es exactamente lo que queremos. El caveat honesto del
+§13 sigue en pie tal cual.
+
+### 15.4. Quién puede tener bucket: solo el node standalone
+
+**La PWA-node no lleva credenciales de bucket. Nunca.** Son credenciales de escritura
+en un navegador; ahí no van. La PWA sigue con OPFS/IndexedDB, y el bucket es un backend
+del **daemon**, que es quien está enrolado al vault y puede recibirlas selladas.
+
+Consecuencia: el bucket refuerza el tier standalone, que es justo donde duele el disco.
+El tier PWA no cambia en nada, y **sin bucket todo sigue funcionando igual** — disco
+local es el default, y el patrón del ecosistema (`CLAUDE.md`) manda: el aparato cumple
+el rol, lo dedicado solo añade.
+
+### 15.5. Los dos cerrojos del §7.2 que se quedan
+
+Con el egress a cero, los cerrojos que existían **por costo** (tope de 512 KB, techo de
+egress, límite por IP) dejan de hacer falta en el camino del bucket. Los que existían
+**por seguridad** no, y se quedan:
+
+- **El tipo se comprueba por los bytes, no por lo que declara quien sube** (`sniffImage`).
+  **El SVG y el HTML no se publican**: son documentos que ejecutan scripts.
+- **El dominio público del bucket no comparte origen con ninguna app** del ecosistema.
+  Da igual lo bien que filtres: si algún día se cuela algo activo, que no aterrice en
+  un origen donde haya sesiones o `localStorage` de nadie.
+
+### 15.6. Publicar no es un interruptor
+
+Como el `cid` privado es el hash del **ciphertext** y el público el del **claro**,
+publicar algo que era privado es **subirlo otra vez**, y sale con otro `cid`. No es un
+defecto del diseño, es lo que ya dice `lib/crypto.js`: el `cid` público identifica **el
+archivo** (dos personas que suban el mismo meme coinciden y deduplican), el privado
+identifica **una copia**, a propósito, para que el node no pueda correlacionar dos
+subidas del mismo original.
+
+Y al revés, con todas las letras: **despublicar borra el objeto y purga la caché, pero
+no recoge las copias que ya salieron.** Es la línea de `CLAUDE.md`: ninguna app cuida
+lo que su dueño decide mostrar.
+
+### 15.7. El índice es lo único que no es direccionable por contenido
+
+Los blobs se reconstruyen solos: el `cid` **es** su comprobante. El **índice** (owner,
+ACL, mime, miniaturas, pins) no — es el único estado del node que, si se pierde, deja
+un bucket lleno de bytes anónimos. Así que se respalda **cifrado, al bucket privado**,
+con una llave del vault. Es pequeño y comprimible; no es un subsistema, es un objeto más.
+
+(No se confunde con el pilar `@dotrino/store`, §3.2: allí vive **el puntero del
+usuario** —cuál es el `cid` vigente de algo—, que debe estar siempre disponible. Esto
+es el inventario operativo del node.)
+
+### 15.8. Qué ve el proveedor del bucket privado
+
+Se dice, no se disimula: **ciphertext, tamaños, cantidad de objetos y cuándo se
+tocaron.** No ve nombres ni estructura (la clave es un hash), ni puede leer nada (la
+llave viaja en el fragmento y nunca pasa por ahí).
+
+**No se rellena a tamaños fijos** para ocultar el peso: multiplicaría el gasto del
+usuario por un metadato que, para el volumen del que hablamos, aporta poco. Si algún
+día importa, la respuesta correcta no es el relleno: es no usar bucket para eso.
+
+### 15.9. Proveedor: cualquiera que hable S3, y R2 de referencia
+
+El backend se escribe contra la **API S3**, así que sirve para los cuatro. Precios a
+2026-08-21, con un ejemplo de 100 GB guardados y 500 GB leídos al mes:
+
+| | Guardar | Egress | Ejemplo/mes | |
+|---|---|---|---|---|
+| **Cloudflare R2** ⭐ | $0,015/GB | **$0** | **$1,50** | 10 GB gratis; ya usamos Cloudflare |
+| **Backblaze B2** | $0,00695/GB | 3× lo guardado gratis, y **gratis vía CDN** | $2,70 (o $0,70 con CDN) | el más barato por GB |
+| **Hetzner Object Storage** | €4,99 fijos: 1 TB + 1 TB de tráfico | incluido | $5,99 | precio plano, datos en la UE |
+| **Storj** | $4/TB | $7/TB | $3,90 | descentralizado; leer se paga |
+
+**R2 de referencia**, y con el corte de esta sección el egress a cero pesa **dos veces**:
+en lo público, porque una URL directa es gasto que no puedes predecir; y en lo privado,
+porque cada lectura **sale del bucket hacia el node** antes de ir al peer. Con egress
+cobrado, ese salto se paga en cada descarga.
+
+### 15.10. Cómo entra en el código
+
+`src/blobstore.js` (107 líneas: `put` / `read` / `sizeOf` / `remove`) pasa a ser una
+interfaz con dos implementaciones: **`fs`** (la de hoy, que sigue siendo el default) y
+**`s3`**. `read` con rango ya mapea al header `Range` —el 206 está resuelto desde la
+Fase 1— y `put` sigue hasheando en local antes de subir, así que el `cid` se calcula
+igual y el dedup sale gratis con un `HEAD`.
+
+**Sin SDK:** firma SigV4 con `node:crypto` y `fetch`, ~120 líneas. La Fase 1 se hizo
+con cero dependencias a propósito y el `.npmrc` del ecosistema bloquea los scripts de
+instalación; `@aws-sdk` traería decenas de paquetes para hacer un `PUT`.
+
+**Sin simulacros** (pedido del dueño, 2026-08-21): la interfaz se prueba entera contra
+el backend `fs`, que es una implementación real, y el backend `s3` se prueba contra un
+**bucket de verdad** bajo un prefijo de pruebas, saltándose la prueba si no hay
+credenciales. No se escribe un S3 de mentira para que la suite se sienta verde.
