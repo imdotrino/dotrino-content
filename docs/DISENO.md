@@ -513,11 +513,18 @@ solución de una app):
    firmas y cifrado de verdad sobre un bus en memoria.
 4. **Fase 3 — exposición (SIGUIENTE).** En este orden, porque el anuncio va **antes**
    del transporte: sin él no hay a quién pedirle los bytes.
-   1. **Anuncio y resolución (§3.1):** el node se publica en
-      `<nodeId>/content_<ownerId>` y la lista responde qué nodes de ese dueño están en
-      línea; para el dueño, cablear `listAgentsByLabel(id, 'content')` + `stat <cid>`.
-   2. **P2P/swarm por WebRTC** (§13) + `@dotrino/content-client` (cifrado E2E + link
-      por fragmento).
+   1. ~~**Anuncio y resolución (§3.1)**~~ **HECHO (2026-08-21):** `src/announce.js`.
+      El node se publica en `<nodeId>/content_<ownerId>` —en el canal de **cada** proxio
+      conocido, para que la lista no dependa de por dónde entró quien pregunta— y
+      `findNodes()` contesta quién está vivo. Para el dueño, `listAgentsByLabel(id,
+      'content')`, que es lo que usa `@dotrino/content-client`.
+   2. **PARCIAL (2026-08-21):** `@dotrino/content-client` **publicado** (cifrado E2E,
+      referencia por fragmento, comprobación de hash) y `put`/`get` por el plano de
+      control con tope de 256 KB. **Falta el P2P/swarm por WebRTC** (§13), que es lo
+      que desbloquea los archivos grandes y la lectura por terceros.
+      **Dato despejado:** Node no trae `RTCPeerConnection`, pero **`@roamhq/wrtc`
+      sirve** — distribuye binarios por `optionalDependencies` por plataforma, así que
+      funciona con el `ignore-scripts=true` del ecosistema.
    3. **El sembrador se alimenta de los otros nodes** (§13.1): con el transporte
       puesto, es el mismo código — el sembrador pide `cid` como cualquier peer. Es lo
       que hace que un enlace no dependa de que el portátil esté encendido.
@@ -529,8 +536,10 @@ solución de una app):
       límite por IP y techo de egress persistido— más el permalink `/p/<cid>`. Ver
       §7.2 y §7.3. Falta el **sembrador 24/7** de la cuenta oficial, que es despliegue,
       no código.
-5. **Fase 4 — integración** en la app piloto (**eco**, que es la que resuelve el
-   `#fragment`) y registro en el catálogo.
+5. **Fase 4 — integración: ARRANCADA (2026-08-21).** **eco** ya guarda sus ecos en el
+   node de su autor, con **durabilidad opt-in por eco** y lo efímero como default, tal
+   como pedía §3.2. Falta que eco resuelva el `#fragment` **de otra persona**, que
+   depende del P2P.
 6. **Fase 5 — diferidos** (miniaturas, GC avanzado, replicación).
 
 ## 12. Preguntas abiertas para el dueño

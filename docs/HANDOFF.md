@@ -12,11 +12,27 @@ media pesada** (video/imagen/audio) con enlaces compartibles, **autohospedado po
 usuario**. Complementa al `@dotrino/store` (índice chico) y al `vault` (identidad);
 no los reemplaza.
 
-**Estado: Fases 1 y 2 implementadas** (core local + aparato del vault con plano de
-control cifrado) **y la Fase 3.4 —el modo público de VISTAS PREVIAS— también
-(2026-08-21)**, adelantada a pedido del dueño por ser autocontenida. Sin decisiones
-abiertas. Lo que queda de la Fase 3 es el **anuncio** (§3.1), el **transporte P2P** y
-el **sembrador** (§13.1). Detalle abajo.
+**Estado (2026-08-21): Fases 1, 2 y la mayor parte de la 3 implementadas, y la Fase 4
+arrancada — eco ya guarda en el node.** Sin decisiones abiertas.
+
+| | Estado |
+|---|---|
+| Fase 1 — core local | ✅ 2026-07-09 |
+| Fase 2 — aparato del vault | ✅ 2026-08-17 |
+| Fase 3.1 — anuncio y resolución | ✅ 2026-08-21 |
+| Fase 3.2 — transporte | **parcial**: `put`/`get` por el plano de control con tope de 256 KB, y `@dotrino/content-client` publicado. **Falta el P2P por WebRTC**, que es lo que desbloquea los archivos grandes y la lectura por terceros |
+| Fase 3.3 — el sembrador se alimenta de los otros nodes | ❌ (depende del P2P) |
+| Fase 3.4 — modo público | ✅ 2026-08-21, reencuadrado a **vistas previas** |
+| Fase 4 — eco | **arrancada**: guarda tus ecos en tu máquina, opt-in por eco |
+
+**LO QUE FALTA, en una línea: el transporte P2P.** Es lo único que separa el estado
+actual de la promesa completa, y de ahí cuelgan las tres cosas que hoy no se pueden
+hacer: que un tercero con tu enlace lea los bytes, que suban archivos grandes, y que el
+sembrador replique (§13.1). **Dato comprobado el 2026-08-21:** Node **no** trae
+`RTCPeerConnection`, así que el daemon necesita un módulo — y **`@roamhq/wrtc` sirve**,
+porque distribuye binarios por `optionalDependencies` por plataforma (como esbuild) y
+por tanto funciona con el `ignore-scripts=true` del ecosistema. Ese era el riesgo que
+había que despejar antes de planificarlo.
 
 **Reglas duras del dueño (no negociables):**
 1. El contenido **siempre del lado del usuario, NUNCA en un server de Dotrino**.
@@ -187,7 +203,53 @@ estrecho que lo que el diseño proponía, y mejor. Ver `DISENO.md` §7.2 y §7.3
 - `robots.txt` = `Disallow: /` por defecto (`--public-index` lo levanta, y es para la
   cuenta oficial). 404 y nunca 403 para lo privado.
 
-**Siguiente: el resto de la Fase 3 — y empieza por el ANUNCIO** (`DISENO.md` §3.1, nuevo):
+## Fase 3.1: HECHA (2026-08-21) — el anuncio
+
+`src/announce.js`. El node se publica en `<nodeId>/content_<ownerId>` y `findNodes()`
+contesta qué nodes de un dueño están vivos.
+
+- **El canal lleva el `ownerId`, no el `cid`**: uno por contenido filtraría qué guarda
+  cada quien con solo listar canales, y serían miles.
+- **Se publica en el canal de CADA proxio conocido y se lista en todos**, en vez de
+  elegir uno por una fórmula: la lista de nodos de la malla cambia cuando entra o sale
+  un proxio, y una fórmula que dependa de ella reasignaría todos los canales ese día.
+  Son dos canales hoy.
+- Re-publica al reconectar (el token cambia) y es best-effort: sin proxy el node sigue
+  sirviendo en local y atendiendo a los aparatos del acta.
+- **Anunciarse NO da acceso**: es una guía de teléfonos. Quien pregunta sigue teniendo
+  que comprobar el certificado del node y el hash de los bytes.
+- Para esto hizo falta que `@dotrino/remote-agent` **expusiera su cliente de proxy**
+  (0.4.0, publicado): abrir una segunda conexión sería un segundo `identify`, una
+  segunda identidad de transporte y una segunda cola.
+
+## Fase 3.2: PARCIAL (2026-08-21) — `put`/`get` y el cliente
+
+- **`put` y `get` por el plano de control, con tope de 256 KB**, anunciado en `hello`
+  (`maxBytes`). **No es un límite a subir después: es la frontera del §7.1.** Por ahí
+  pasa lo que **es** un mensaje —un eco, una miniatura—, no contenido. Por eso **no hay
+  subida por partes**: trocear un archivo para colarlo por el proxy sería justo lo que
+  §7.1 prohíbe, solo que disfrazado.
+- **`@dotrino/content-client@0.1.0`** publicado, y vive en **`lib/` de este repo** (como
+  `dotrino-vault` publica el suyo): el protocolo es de las dos puntas y separarlas en
+  dos repos es la forma de que acaben diciendo cosas distintas.
+  - `ref.js` (referencia `ownerId+cid[+llave]`), `crypto.js` (AES-256-GCM, **una llave
+    por blob**), `index.js` (encuentra los nodes por la bóveda, sesión por
+    `@dotrino/remote-agent`, **comprueba el hash** de lo que llega, y falla con
+    `code: 'no-node'` en vez de esperar), `thumb.js` (miniatura en canvas).
+- **Falta el P2P.** Ver arriba.
+
+## Fase 4: ARRANCADA (2026-08-21) — eco guarda en tu máquina
+
+`dotrino-eco` consume el cliente. Cada eco es un objeto firmado e inmutable → encaja
+exacto en el direccionado por hash (§3.2). Lo que se implementó tal cual lo pedía el
+diseño: **durabilidad opt-in POR ECO**, con lo efímero como default y **sin memoria
+entre un eco y otro** — guardar cambia lo que eco promete y eso se pide, no se hace por
+detrás. El **índice** de lo guardado va al **store** (tiene que estar aunque la máquina
+esté apagada) y los **bytes** al content. Sin node, eco funciona igual y el interruptor
+ni aparece. La copy no dice «node» en ninguna parte (§9.1): dice «una copia, en tu
+propia máquina».
+
+**Siguiente: el transporte P2P — y con él, el resto** (`DISENO.md` §3.1, nuevo):
 sin resolución `ownerId → nodes` no hay a quién pedirle los bytes. Orden: (1) el node se
 publica en `<nodeId>/content_<ownerId>` —con prefijo de nodo, que hay dos proxios
 federados y un canal sin prefijo es local a cada uno— y para el dueño se cablea
