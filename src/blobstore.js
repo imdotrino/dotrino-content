@@ -27,6 +27,12 @@ export class BlobStore {
     this.root = root
     this.blobsDir = path.join(root, 'blobs')
     this.tmpDir = path.join(root, 'tmp')
+    /**
+     * ¿Hay una segunda copia detrás (un bucket)? Aquí no: el disco es la única
+     * copia, así que soltar un blob es destruirlo y el GC se comporta como
+     * siempre (DISENO.md §15.11).
+     */
+    this.backed = false
   }
 
   async init () {
@@ -103,5 +109,14 @@ export class BlobStore {
 
   async remove (cid) {
     await rm(this.pathFor(cid), { force: true })
+  }
+
+  /**
+   * Suelta la copia LOCAL y deja la de atrás. Sin bucket detrás no hay copia de
+   * atrás, así que esto es exactamente `remove` — y por eso el node comprueba
+   * `backed` antes de llamarlo: con este backend, desalojar es destruir.
+   */
+  async evict (cid) {
+    return this.remove(cid)
   }
 }

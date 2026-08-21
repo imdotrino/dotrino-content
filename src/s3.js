@@ -157,8 +157,14 @@ export class S3Bucket {
     return `${this.base}/${key.split('/').map((s) => uriEncode(s)).join('/')}`
   }
 
-  /** @private */
-  async request (method, key, { headers = {}, body = null, payloadHash, contentLength } = {}) {
+  /**
+   * @private
+   * @param {string} method
+   * @param {string} key
+   * @param {{ headers?: Record<string,string>, body?: any, payloadHash?: string,
+   *           contentLength?: number|null }} [opts]
+   */
+  async request (method, key, { headers = {}, body = null, payloadHash = '', contentLength = null } = {}) {
     const url = this.urlFor(key)
     const h = signRequest({
       method,
@@ -189,10 +195,11 @@ export class S3Bucket {
    * prefijo, así que no hay que calcular nada.
    * @param {string} key
    * @param {any} body stream o buffer
-   * @param {{ sha256: string, size: number, contentType?: string, cacheControl?: string }} o
+   * @param {{ sha256?: string, size?: number, contentType?: string, cacheControl?: string }} [o]
    */
-  async put (key, body, { sha256, size, contentType, cacheControl } = {}) {
+  async put (key, body, { sha256 = '', size = 0, contentType = '', cacheControl = '' } = {}) {
     if (!sha256) throw new Error('S3Bucket.put: hace falta el sha256 del contenido')
+    /** @type {Record<string,string>} */
     const headers = {}
     if (contentType) headers['content-type'] = contentType
     if (cacheControl) headers['cache-control'] = cacheControl
