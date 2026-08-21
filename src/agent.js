@@ -22,6 +22,7 @@
 import { pubkeyId } from '@dotrino/identity/capabilities'
 import { startRemoteAgent } from '@dotrino/remote-agent/agent'
 import { dataDir, loadLink } from '@dotrino/remote-agent/link'
+import { startAnnounce } from './announce.js'
 import { createOps } from './ops.js'
 
 /** Carpeta de datos del enlace (NO es la de los blobs: el enlace es del aparato). */
@@ -43,10 +44,13 @@ export const isLinked = (dir = linkDir()) => {
  * }} opts
  *   client: transporte inyectado — SOLO para pruebas (bus en memoria). En
  *   producción lo levanta el middleware con el proxy del ecosistema.
+ *   announce: publicarse en el canal del dueño para que un TERCERO con el enlace
+ *   pueda encontrar este node (§3.1). Encendido por defecto; se apaga con `false`
+ *   en un node que solo quieras usar desde tus propios aparatos.
  * @returns {Promise<{ machine: string, machineId: string, owner: string, close: () => void }>}
  */
 export async function startContentAgent ({
-  node, dir = linkDir(), proxyUrl, version = null, client, quiet = false, onRevoked
+  node, dir = linkDir(), proxyUrl, version = null, client, quiet = false, onRevoked, announce = true
 } = {}) {
   if (!node) throw new Error('startContentAgent: falta node')
   const link = loadLink(dir)
@@ -78,7 +82,23 @@ export async function startContentAgent ({
 
   if (!quiet) console.log(`[content] control plane ready · owner ${owner.slice(0, 16)}`)
 
-  return { ...agent, owner }
+  // ANUNCIO (§3.1): sin esto el node es administrable por sus dueños pero
+  // INVISIBLE para quien recibe un enlace — la referencia nombra al dueño, y hay
+  // que poder pasar de ahí a «qué nodes suyos están vivos». Reusa la conexión del
+  // middleware: nunca se abre una segunda.
+  const beacon = announce && agent.client
+    ? startAnnounce({ client: agent.client, owner, quiet })
+    : null
+
+  return {
+    ...agent,
+    owner,
+    channels: () => beacon?.channels() || [],
+    close () {
+      try { beacon?.close() } catch (_) {}
+      agent.close()
+    }
+  }
 }
 
 export default { startContentAgent, isLinked, linkDir }
