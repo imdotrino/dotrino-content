@@ -90,12 +90,18 @@ export async function startContentAgent ({
   const beacon = announce && agent.client
     ? startAnnounce({ client: agent.client, owner, quiet })
     : null
+  // LECTURA PÚBLICA por la red (§16): un tercero con el enlace pide el `cid` en un
+  // mensaje suelto y recibe solo lo marcado público. Sin esto, anunciarse no sirve
+  // de nada: el enlace nombraría a un node que no contesta a nadie.
+  const fetcher = agent.client ? startPublicFetch({ client: agent.client, node, quiet }) : null
 
   return {
     ...agent,
     owner,
     channels: () => beacon?.channels() || [],
+    served: () => fetcher?.served() || 0,
     close () {
+      try { fetcher?.close() } catch (_) {}
       try { beacon?.close() } catch (_) {}
       agent.close()
     }

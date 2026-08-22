@@ -50,6 +50,7 @@ export function startPublicFetch ({ client, node, ratePerMin = 60, quiet = false
   const handle = async (from, p) => {
     const rid = typeof p.rid === 'string' ? p.rid : null
     if (!rid) return
+    if (!quiet) console.log(`[content] fetch ${String(p.cid).slice(0, 20)}… from ${String(from).slice(0, 16)}${p.head ? ' (head)' : ''}`)
     if (!allowed(from)) return fail(from, rid, 'rate-limited', 'too many requests')
     if (!isValidCid(p.cid)) return fail(from, rid, 'bad-input', 'invalid cid')
     const meta = node.stat(p.cid)

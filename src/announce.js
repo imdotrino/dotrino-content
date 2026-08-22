@@ -78,7 +78,7 @@ export function startAnnounce ({ client, owner, quiet = false, intervalMs = REPU
     }
     const first = !current.length && done.length
     current = done
-    if (first && !quiet) console.log(`[content] anunciado como node de ${owner.slice(0, 16)} en ${done.length} proxio(s)`)
+    if (first && !quiet) console.log(`[content] anunciado como node de ${owner.slice(0, 16)} en ${done.length} proxio(s) · token ${client.token}`)
   }
 
   publishAll()
