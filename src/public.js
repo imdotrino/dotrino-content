@@ -70,23 +70,34 @@ const IMAGE_TYPES = [
 export const PUBLIC_MIMES = Object.freeze(IMAGE_TYPES.map((t) => t.mime))
 
 /**
- * Lee los primeros bytes del blob y devuelve el tipo REAL, o null si no es una
- * imagen de las admitidas. Es lo que se sirve como `content-type`: si alguien
- * subió un HTML diciendo que era un PNG, aquí no pasa.
+ * El tipo REAL a partir de los primeros bytes, o `null` si no es una imagen de las
+ * admitidas. Es lo que se sirve como `content-type`: si alguien subió un HTML diciendo
+ * que era un PNG, aquí no pasa.
+ * @param {Buffer|Uint8Array|null} buf
+ * @returns {string|null}
+ */
+export function sniffBytes (buf) {
+  if (!buf || buf.length < 12) return null
+  return IMAGE_TYPES.find((t) => t.test(buf))?.mime || null
+}
+
+/**
+ * El tipo real de un blob, pidiéndole al ALMACÉN sus primeros bytes.
+ *
+ * Antes abría el archivo por su ruta (`node.store.pathFor`), y eso ataba este cerrojo
+ * al disco: con un bucket detrás (§15) no hay ninguna ruta que abrir y el puerto
+ * público se habría quedado sin poder comprobar nada — o, peor, comprobándolo solo
+ * cuando el blob estuviera en la caché.
+ * @param {{ readHead: (cid: string, n: number, opts?: any) => Promise<Buffer|Uint8Array> }} store
+ * @param {string} cid
+ * @param {any} [opts]
  * @returns {Promise<string|null>}
  */
-export async function sniffImage (path) {
-  let fh
+export async function sniffImage (store, cid, opts) {
   try {
-    fh = await openFile(path, 'r')
-    const buf = Buffer.alloc(16)
-    const { bytesRead } = await fh.read(buf, 0, 16, 0)
-    if (bytesRead < 12) return null
-    return IMAGE_TYPES.find((t) => t.test(buf))?.mime || null
+    return sniffBytes(await store.readHead(cid, 16, opts))
   } catch {
     return null
-  } finally {
-    await fh?.close().catch(() => {})
   }
 }
 
@@ -271,7 +282,7 @@ export function createPublicServer (node, opts = {}) {
 
       // --- bytes ---
       // El tipo REAL, sacado del archivo. `row.mime` no decide nada aquí.
-      const kind = await sniffImage(node.store.pathFor(cid))
+      const kind = await sniffImage(node.store, cid, { public: true })
       if (!kind) return text(res, 404, 'no disponible\n')
       if (maxBytes && row.size > maxBytes) {
         // No es un error del que pide: es la política del node. Se dice cuál es.
@@ -331,7 +342,7 @@ export function createPublicServer (node, opts = {}) {
     for (const candidate of [{ cid, row }, row.thumbnailCid ? { cid: row.thumbnailCid, row: node.publicStat(row.thumbnailCid) } : null]) {
       if (!candidate?.row) continue
       if (maxBytes && candidate.row.size > maxBytes) continue
-      if (await sniffImage(node.store.pathFor(candidate.cid))) return candidate.cid
+      if (await sniffImage(node.store, candidate.cid, { public: true })) return candidate.cid
     }
     return null
   }

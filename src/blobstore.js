@@ -10,7 +10,7 @@
  */
 import { createHash, randomBytes } from 'node:crypto'
 import { createWriteStream, createReadStream } from 'node:fs'
-import { mkdir, rename, rm, stat } from 'node:fs/promises'
+import { mkdir, open, rename, rm, stat } from 'node:fs/promises'
 import { pipeline } from 'node:stream/promises'
 import { Transform } from 'node:stream'
 import path from 'node:path'
@@ -35,9 +35,11 @@ export class BlobStore {
     this.backed = false
   }
 
+  /** Prepara los directorios. Devuelve `this` para poder encadenar, como el resto. */
   async init () {
     await mkdir(this.blobsDir, { recursive: true })
     await mkdir(this.tmpDir, { recursive: true })
+    return this
   }
 
   /** Path en disco de un cid (no comprueba existencia). */
@@ -105,6 +107,21 @@ export class BlobStore {
     return range
       ? createReadStream(p, { start: range.start, end: range.end })
       : createReadStream(p)
+  }
+
+  /**
+   * Los primeros `n` bytes de un blob. Existe para que el puerto público compruebe el
+   * tipo REAL de una imagen por sus bytes mágicos (§7.2) **sin abrir el archivo por su
+   * ruta**: con un bucket detrás no hay ruta que abrir, así que olfatear tiene que ser
+   * una operación del almacén y no de quien lo usa.
+   */
+  async readHead (cid, n) {
+    const fh = await open(this.pathFor(cid), 'r')
+    try {
+      const buf = Buffer.alloc(n)
+      const { bytesRead } = await fh.read(buf, 0, n, 0)
+      return buf.subarray(0, bytesRead)
+    } finally { await fh.close() }
   }
 
   async remove (cid) {
