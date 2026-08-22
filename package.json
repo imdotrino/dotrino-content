@@ -1,7 +1,7 @@
 {
   "name": "dotrino-content",
-  "version": "0.1.0",
-  "description": "Nodo de contenido del ecosistema Dotrino: guarda y sirve media pesada por cid (hash de contenido), autohospedado por el usuario. Fase 1: core local (localhost).",
+  "version": "0.2.0",
+  "description": "Nodo de contenido del ecosistema Dotrino: guarda los bytes del usuario direccionados por su hash (cid), en su propia maquina y, si el dueno quiere, respaldados en su propio bucket (R2, Backblaze, Hetzner, Storj o S3). Lo publico sale por URL directa; lo privado, cifrado y solo por la red Dotrino.",
   "type": "module",
   "bin": {
     "dotrino-content": "bin/cli.js"
@@ -26,5 +26,32 @@
     "@dotrino/identity": "0.55.0",
     "@dotrino/remote-agent": "0.4.1",
     "@dotrino/vault": "0.27.0"
+  },
+  "keywords": [
+    "dotrino",
+    "content-addressed",
+    "cid",
+    "self-hosted",
+    "privacy",
+    "s3",
+    "r2",
+    "blob-storage"
+  ],
+  "homepage": "https://github.com/imdotrino/dotrino-content#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/imdotrino/dotrino-content.git"
+  },
+  "bugs": {
+    "url": "https://github.com/imdotrino/dotrino-content/issues"
+  },
+  "author": "Dotrino",
+  "files": [
+    "bin",
+    "src",
+    "README.md"
+  ],
+  "publishConfig": {
+    "access": "public"
   }
 }
