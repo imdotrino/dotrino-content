@@ -127,9 +127,11 @@ test('con bucket público: la URL viaja como ATAJO, y lo grande solo por URL', a
   release(); await new Promise((r) => setImmediate(r))   // …y la pública que iba detrás
   assert.equal(node.publicUrl(cid), `https://c.example.com/${cid}`)
 
-  const h = await fetchPublic({ client: third, owner: OWNER, cid, head: true })
-  assert.equal(h.bytes, null, 'head: sin bytes')
+  const h = await fetchPublic({ client: third, owner: OWNER, cid })
+  assert.equal(h.bytes, null, 'con atajo, los bytes no viajan por el proxio')
   assert.equal(h.url, `https://c.example.com/${cid}`)
+  const f = await fetchPublic({ client: third, owner: OWNER, cid, full: true })
+  assert.equal(Buffer.from(f.bytes).toString(), 'imagen', 'salvo que se insista (la URL falló)')
 
   node.store.upload = async () => {}
   const big = await put(node, Buffer.alloc(FETCH_MAX_BYTES + 1, 7), { mime: 'image/png' })

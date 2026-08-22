@@ -57,7 +57,10 @@ export function startPublicFetch ({ client, node, ratePerMin = 60, quiet = false
     if (!meta || meta.acl !== 'public' || meta.enc) return fail(from, rid, 'not-found', 'no such public cid')
     const url = node.publicUrl(p.cid)
     const out = { type: MSG.FETCH_OK, rid, cid: p.cid, mime: meta.mime, size: meta.size, url }
-    if (!p.head) {
+    // Con atajo, los bytes NO viajan por el proxio salvo que el que pide insista
+    // (`full`): cargar por URL es gratis para el node y para la red, y la app ya
+    // sabe volver aquí si la URL le falla. Sin atajo, van en el mensaje si caben.
+    if (!p.head && (!url || p.full)) {
       if (meta.size > FETCH_MAX_BYTES) {
         if (!url) return fail(from, rid, 'too-large', `${meta.size} bytes do not fit in a message and this node has no public bucket`)
         // Cabe solo por URL: se contesta sin bytes y la app carga por ahí.
