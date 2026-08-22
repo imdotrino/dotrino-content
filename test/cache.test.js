@@ -36,14 +36,14 @@ test('leer anota el acceso: es lo que ordena el desalojo', async () => {
 })
 
 test('el desalojo va por USO, no por antigüedad', async () => {
-  const viejo = (await put('el viejo, pero muy pedido')).cid
-  const nuevo = (await put('el nuevo, que nadie mira')).cid
+  const old = (await put('el viejo, pero muy pedido')).cid
+  const fresh = (await put('el nuevo, que nadie mira')).cid
 
-  node.index.touch(viejo, Date.now())          // se lee ahora
-  node.index.touch(nuevo, Date.now() - 60_000) // se leyó hace un minuto
+  node.index.touch(old, Date.now())          // se lee ahora
+  node.index.touch(fresh, Date.now() - 60_000) // se leyó hace un minuto
 
-  const orden = node.index.evictable().map((b) => b.cid)
-  assert.ok(orden.indexOf(nuevo) < orden.indexOf(viejo),
+  const order = node.index.evictable().map((b) => b.cid)
+  assert.ok(order.indexOf(fresh) < order.indexOf(old),
     'el menos usado sale primero, aunque sea el más nuevo')
 })
 
@@ -61,17 +61,17 @@ test('lo que nunca se leyó cuenta por su fecha de subida', async () => {
 test('sin confirmación del bucket no se desaloja NADA (el cerrojo)', async () => {
   const d = await mkdtemp(path.join(tmpdir(), 'dcache3-'))
   const ix = new Index(d)
-  const subido = 'sha256-' + 'c'.repeat(64)
-  const pendiente = 'sha256-' + 'd'.repeat(64)
-  ix.upsert({ cid: subido, size: 10, mime: 'application/octet-stream' })
-  ix.upsert({ cid: pendiente, size: 10, mime: 'application/octet-stream' })
-  ix.setRemote(subido, true)
+  const stored = 'sha256-' + 'c'.repeat(64)
+  const pending = 'sha256-' + 'd'.repeat(64)
+  ix.upsert({ cid: stored, size: 10, mime: 'application/octet-stream' })
+  ix.upsert({ cid: pending, size: 10, mime: 'application/octet-stream' })
+  ix.setRemote(stored, true)
 
-  assert.deepEqual(ix.evictable({ requireRemote: true }).map((b) => b.cid), [subido],
+  assert.deepEqual(ix.evictable({ requireRemote: true }).map((b) => b.cid), [stored],
     'lo que el bucket no ha confirmado no es desalojable: su única copia es esta')
   assert.equal(ix.evictable().length, 2, 'sin bucket detrás, la condición no aplica')
 
-  assert.deepEqual(ix.pendingUpload().map((b) => b.cid), [pendiente],
+  assert.deepEqual(ix.pendingUpload().map((b) => b.cid), [pending],
     'y lo no confirmado es, exactamente, la cola de subida')
   ix.close()
   await rm(d, { recursive: true, force: true })
@@ -80,11 +80,11 @@ test('sin confirmación del bucket no se desaloja NADA (el cerrojo)', async () =
 test('la cuota mira el disco, no el inventario', async () => {
   const d = await mkdtemp(path.join(tmpdir(), 'dcache4-'))
   const ix = new Index(d)
-  const aqui = 'sha256-' + 'e'.repeat(64)
-  const desalojado = 'sha256-' + 'f'.repeat(64)
-  ix.upsert({ cid: aqui, size: 100, mime: 'application/octet-stream' })
-  ix.upsert({ cid: desalojado, size: 900, mime: 'application/octet-stream' })
-  ix.setCached(desalojado, false)
+  const here = 'sha256-' + 'e'.repeat(64)
+  const evicted = 'sha256-' + 'f'.repeat(64)
+  ix.upsert({ cid: here, size: 100, mime: 'application/octet-stream' })
+  ix.upsert({ cid: evicted, size: 900, mime: 'application/octet-stream' })
+  ix.setCached(evicted, false)
 
   assert.equal(ix.cachedBytes(), 100, 'lo desalojado ya no ocupa disco')
   assert.equal(ix.totalBytes(), 1000, 'pero sigue existiendo en el inventario')
@@ -95,26 +95,26 @@ test('la cuota mira el disco, no el inventario', async () => {
 
 test('sin bucket, el GC sigue destruyendo: no hay segunda copia que fingir', async () => {
   const d = await mkdtemp(path.join(tmpdir(), 'dcache6-'))
-  const solo = await new ContentNode({ dir: d }).init()
-  const { cid } = await solo.put(Readable.from([Buffer.from('esto se va del todo')]))
+  const only = await new ContentNode({ dir: d }).init()
+  const { cid } = await only.put(Readable.from([Buffer.from('esto se va del todo')]))
 
-  assert.ok(solo.gc({ needBytes: 1 }).freed > 0)
-  assert.equal(solo.stat(cid), null, 'sin bucket, desalojar ES destruir, y la fila se va')
-  solo.close()
+  assert.ok(only.gc({ needBytes: 1 }).freed > 0)
+  assert.equal(only.stat(cid), null, 'sin bucket, desalojar ES destruir, y la fila se va')
+  only.close()
   await rm(d, { recursive: true, force: true })
 })
 
 test('un índice viejo se migra solo y estrena las columnas', async () => {
   const d = await mkdtemp(path.join(tmpdir(), 'dcache5-'))
-  const antes = new Index(d)
-  antes.upsert({ cid: 'sha256-' + '9'.repeat(64), size: 5, mime: 'application/octet-stream' })
-  antes.close()
+  const before = new Index(d)
+  before.upsert({ cid: 'sha256-' + '9'.repeat(64), size: 5, mime: 'application/octet-stream' })
+  before.close()
 
-  const despues = new Index(d) // vuelve a abrir: corre las migraciones
-  const fila = despues.get('sha256-' + '9'.repeat(64))
-  assert.equal(fila.remote, 0, 'lo que ya estaba no está en ningún bucket')
-  assert.equal(fila.cached, 1, 'pero sí está en disco')
-  assert.equal(fila.lastRead, null)
-  despues.close()
+  const after = new Index(d) // vuelve a abrir: corre las migraciones
+  const row = after.get('sha256-' + '9'.repeat(64))
+  assert.equal(row.remote, 0, 'lo que ya estaba no está en ningún bucket')
+  assert.equal(row.cached, 1, 'pero sí está en disco')
+  assert.equal(row.lastRead, null)
+  after.close()
   await rm(d, { recursive: true, force: true })
 })

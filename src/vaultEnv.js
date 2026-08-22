@@ -84,21 +84,21 @@ export function startVaultConfig ({ dir = serviceDir(), onSecrets, log = console
   let stopped = false
   let watcher = null
   /** @type {(v:any)=>void} */
-  let llegaron = () => {}
-  const ready = new Promise((resolve) => { llegaron = resolve })
+  let arrive = () => {}
+  const ready = new Promise((resolve) => { arrive = resolve })
 
   // La configuración decide QUÉ ALMACÉN usa este node, así que quien arranca la espera…
   // pero con plazo. Si la bóveda está apagada, seguir esperando sería dejar al usuario
   // sin su propio contenido local por una pieza que el ecosistema promete no exigir
   // (`CLAUDE.md`: ninguna app puede requerir un daemon encendido). Al vencer el plazo se
   // sigue en local, y cuando la configuración llegue, `watchEnv` reinicia con ella.
-  let vencio = false
-  const plazo = setTimeout(() => {
-    vencio = true
+  let expired = false
+  const deadline = setTimeout(() => {
+    expired = true
     log(`[vault] la bóveda no contestó en ${Math.round(firstWaitMs / 1000)}s: arranco con lo local y me reinicio cuando llegue`)
-    llegaron(null)
+    arrive(null)
   }, firstWaitMs)
-  plazo.unref?.()
+  deadline.unref?.()
 
   ;(async () => {
     const { waitForSecrets } = await import('@dotrino/vault/service')
@@ -113,8 +113,8 @@ export function startVaultConfig ({ dir = serviceDir(), onSecrets, log = console
     const { injected, overridden } = applyEnv(secrets)
     log(`[vault] ${injected.length} valor(es) del vault aplicados al entorno`)
     if (overridden.length) log(`[vault] pisaron el entorno de esta máquina: ${overridden.join(', ')}`)
-    clearTimeout(plazo)
-    llegaron(secrets)
+    clearTimeout(deadline)
+    arrive(secrets)
     onSecrets?.(secrets)
 
     // LLEGÓ TARDE: el node ya arrancó, y arrancó con lo que había — o sea, con el
@@ -123,7 +123,7 @@ export function startVaultConfig ({ dir = serviceDir(), onSecrets, log = console
     // que arrancó antes que su bóveda se queda en local para siempre, con la
     // configuración correcta puesta en el entorno y sin usarla. Se sale, y el
     // supervisor lo levanta ya con todo.
-    if (vencio) {
+    if (expired) {
       log('[vault] llegó la configuración después de arrancar: me reinicio para tomarla')
       setTimeout(() => process.exit(0), 300)
       return
@@ -145,13 +145,13 @@ export function startVaultConfig ({ dir = serviceDir(), onSecrets, log = console
           }
         : {})
     })
-  })().catch((e) => { log(`[vault] no se pudo leer la configuración: ${e.message}`); clearTimeout(plazo); llegaron(null) })
+  })().catch((e) => { log(`[vault] no se pudo leer la configuración: ${e.message}`); clearTimeout(deadline); arrive(null) })
 
   return {
     enabled: true,
     /** Resuelve con la configuración, o con `null` si venció el plazo o falló. */
     ready,
-    close () { stopped = true; clearTimeout(plazo); try { watcher?.close?.() } catch (_) {} }
+    close () { stopped = true; clearTimeout(deadline); try { watcher?.close?.() } catch (_) {} }
   }
 }
 

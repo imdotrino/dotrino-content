@@ -120,8 +120,8 @@ export async function checkBuckets (cfg, { priv, pub }, f = fetch) {
       const cid = 'sha256-' + createHash('sha256').update(bytes).digest('hex')
       await pub.put(cid, bytes, { sha256: cid.slice(7), size: bytes.length, contentType: 'text/plain' })
       const r = await f(`${cfg.baseUrl.replace(/\/+$/, '')}/${cid}`, { method: 'GET' })
-      const cuerpo = r.ok ? (await r.text()).trim() : ''
-      if (cuerpo !== PROBE) {
+      const body = r.ok ? (await r.text()).trim() : ''
+      if (body !== PROBE) {
         warn.push(`${cfg.baseUrl} no sirve lo que hay en «${cfg.pub}» (HTTP ${r.status}): revisa que el dominio esté conectado AL BUCKET desde el panel`)
       }
     } catch (e) {
