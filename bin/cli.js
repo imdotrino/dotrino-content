@@ -52,9 +52,15 @@ const { values, positionals } = parseArgs({
     'public-egress-gb': { type: 'string' },
     'public-url': { type: 'string' },
     'app-url': { type: 'string' },
-    'public-index': { type: 'boolean' }
+    'public-index': { type: 'boolean' },
+    help: { type: 'boolean', short: 'h' }
   }
 })
+
+if (values.help) {
+  console.log(USAGE)
+  process.exit(0)
+}
 
 const cmd = positionals[0] || 'start'
 if (cmd !== 'start' && cmd !== 'enroll') {
