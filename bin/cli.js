@@ -117,12 +117,20 @@ const gcMin = Number(values['gc-min'] || 60)
 // ahí sale `CONTENT_STORAGE` y, con él, qué almacén usa este node. Sin vault esto no
 // hace nada y el node corre en local, que es el modo normal de un autohospedado.
 const { startVaultConfig, isEnrolled } = await import('../src/vaultEnv.js')
-const vaultConfig = startVaultConfig({
-  log: (m) => console.log(m)
-})
+const log = (m) => console.log(m)
+const vaultConfig = startVaultConfig({ log })
 if (!isEnrolled()) console.log('sin vault: configuración local (enrola con: dotrino-content enroll <código>)')
+// Se ESPERA a la configuración antes de montar el almacén, porque de ella sale cuál es
+// (§15.14). Con plazo: si la bóveda no contesta, se arranca con el disco y ya se
+// reiniciará cuando llegue — un node no puede quedarse sin servir por eso.
+await vaultConfig.ready
 
-const node = await new ContentNode({ dir, maxBytes, maxBlobBytes }).init()
+const { openStore } = await import('../src/storage.js')
+const { store } = await openStore({ dir, log })
+
+const node = await new ContentNode({ dir, maxBytes, maxBlobBytes, store, log }).init()
+// Lo que quedó sin subir en un arranque anterior. Se lanza y no se espera.
+node.backupPending().then(({ pending }) => { if (pending) log(`[almacén] ${pending} pendiente(s) de subir al bucket`) })
 const server = createServer(node)
 
 // GC periódico de vencidos (ttl); el GC por cuota corre inline en cada put.

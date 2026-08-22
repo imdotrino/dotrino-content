@@ -8,6 +8,7 @@
  *   DELETE /c/<cid>      borrar
  *   GET    /list         índice
  *   POST   /pin/<cid>    retención (evita GC)     POST /unpin/<cid>
+ *   POST   /public/<cid>  publicar (al bucket público si lo hay)  POST /private/<cid>
  *   GET    /stats        uso de disco, nº blobs
  */
 import http from 'node:http'
@@ -117,6 +118,24 @@ async function route (node, req, res) {
     if (!isValidCid(cid)) return json(res, 400, { error: 'cid inválido' })
     const ok = node.pin(cid, top === 'pin')
     return ok ? json(res, 200, { ok: true }) : json(res, 404, { error: 'no existe' })
+  }
+
+  // PUBLICAR / despublicar. Existía solo por el plano de control, y eso dejaba sin poder
+  // publicar a las herramientas de la propia máquina —que es donde vive el dueño—, y sin
+  // poder probar el camino público sin montar medio ecosistema.
+  //
+  // Con bucket detrás, marcar público MUEVE los bytes al bucket público, que es otro
+  // (§15.1): por eso pasa por `node.setAcl` y no por el índice a secas.
+  if (req.method === 'POST' && (top === 'public' || top === 'private') && cid) {
+    if (!isValidCid(cid)) return json(res, 400, { error: 'cid inválido' })
+    const meta = node.stat(cid)
+    if (!meta) return json(res, 404, { error: 'no existe' })
+    // Un blob CIFRADO no puede ser público, y se rechaza aquí además de en el índice:
+    // es la misma frontera del §7.2, y una frontera que solo se comprueba en un sitio
+    // acaba teniendo un camino que no pasa por ese sitio.
+    if (top === 'public' && meta.enc) return json(res, 400, { error: 'un blob cifrado no puede ser público' })
+    const ok = node.setAcl(cid, top === 'public' ? 'public' : null)
+    return ok ? json(res, 200, { ok: true, acl: top === 'public' ? 'public' : null }) : json(res, 404, { error: 'no existe' })
   }
 
   json(res, 404, { error: 'ruta desconocida' })

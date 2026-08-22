@@ -12,6 +12,7 @@
  * `local` y lo DICE. Un almacén mal configurado que parece funcionar es la peor de las
  * tres opciones: se descubre el día que hace falta lo que se creía guardado.
  */
+import { createHash } from 'node:crypto'
 import { BlobStore } from './blobstore.js'
 import { S3BlobStore } from './blobstore-s3.js'
 import { S3Bucket } from './s3.js'
@@ -24,6 +25,9 @@ export const PROVIDERS = Object.freeze({
   storj: { region: 'us-east-1' },
   s3: { region: 'us-east-1' }
 })
+
+/** La sonda del camino público: nueve bytes que se suben y se leen por el dominio. */
+const PROBE = 'dotrino!'
 
 /** Lo que hace falta para hablar con un bucket, más lo que hace falta para el público. */
 const REQUIRED = ['CONTENT_S3_ENDPOINT', 'CONTENT_S3_BUCKET_PRIVATE', 'CONTENT_S3_KEY_ID', 'CONTENT_S3_SECRET']
@@ -83,8 +87,14 @@ export async function checkBuckets (cfg, { priv, pub }, f = fetch) {
   }
 
   // 2. El privado NO puede responder sin credenciales. Se pide un objeto que no existe:
-  //    un bucket cerrado contesta 401/403 (no autorizado), y uno ABIERTO contesta 404
-  //    (no está) — que es lo que delata que cualquiera puede leer los que sí están.
+  //    un bucket cerrado contesta 400/401/403 (falta la firma o no autoriza), y uno
+  //    ABIERTO contesta 404 (no está) — que es lo que delata que cualquiera puede leer
+  //    los que sí están.
+  //
+  //    LO QUE ESTO NO VE, y hay que decirlo: si alguien conecta un DOMINIO al bucket
+  //    privado, este sondeo no se entera — pregunta al endpoint de S3, que sigue
+  //    exigiendo firma aunque el bucket tenga dominio público. Contra eso no hay API:
+  //    es responsabilidad de quien crea los buckets (§15.15).
   try {
     const r = await f(priv.urlFor('sha256-' + '0'.repeat(64)), { method: 'GET' })
     if (r.status === 404 || r.ok) {
@@ -94,16 +104,28 @@ export async function checkBuckets (cfg, { priv, pub }, f = fetch) {
     warn.push(`no se pudo comprobar si el bucket privado está cerrado: ${e.message}`)
   }
 
-  // 3. El dominio del público tiene que servir de verdad. Un dominio mal conectado no
-  //    da error en ningún sitio: simplemente no sirve nunca, y se descubre tarde.
+  // 3. El dominio del público tiene que servir DE VERDAD, y eso no se deduce mirando
+  //    una respuesta de error: se comprueba subiendo algo y leyéndolo por el dominio.
+  //
+  //    Se intentó antes por las malas —«si el 404 viene en HTML, el dominio no es el
+  //    bucket»— y se cayó sola: GitHub Pages contesta un 404 en HTML, pero R2 TAMBIÉN
+  //    contesta el suyo en HTML. Dos cosas indistinguibles por su página de error.
+  //
+  //    La sonda es un objeto de nueve bytes, siempre el mismo (su nombre es su hash, así
+  //    que subirla dos veces no ensucia nada) y su presencia documenta que el enlace
+  //    funciona. Cuesta dos peticiones al arrancar.
   if (pub && cfg.baseUrl) {
     try {
-      const r = await f(`${cfg.baseUrl.replace(/\/+$/, '')}/sha256-${'0'.repeat(64)}`, { method: 'GET' })
-      // Un 404 aquí es la respuesta BUENA: el dominio llega al bucket y el objeto no
-      // existe. Lo malo es un 5xx, un 000 o una redirección a otra cosa.
-      if (r.status >= 500 || r.status === 0) warn.push(`el dominio público ${cfg.baseUrl} contestó ${r.status}`)
+      const bytes = Buffer.from(PROBE)
+      const cid = 'sha256-' + createHash('sha256').update(bytes).digest('hex')
+      await pub.put(cid, bytes, { sha256: cid.slice(7), size: bytes.length, contentType: 'text/plain' })
+      const r = await f(`${cfg.baseUrl.replace(/\/+$/, '')}/${cid}`, { method: 'GET' })
+      const cuerpo = r.ok ? (await r.text()).trim() : ''
+      if (cuerpo !== PROBE) {
+        warn.push(`${cfg.baseUrl} no sirve lo que hay en «${cfg.pub}» (HTTP ${r.status}): revisa que el dominio esté conectado AL BUCKET desde el panel`)
+      }
     } catch (e) {
-      warn.push(`el dominio público ${cfg.baseUrl} no contesta: ${e.message}`)
+      warn.push(`no se pudo comprobar el camino público: ${e.message}`)
     }
   }
 

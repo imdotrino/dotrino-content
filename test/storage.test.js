@@ -72,7 +72,7 @@ test('sin bucket público no falta nada: lo público viaja por la red', () => {
 // los objetos que sí existen», y esa lectura es justo la que hay que dejar clavada.
 
 const bucketFalso = { urlFor: (k) => 'https://cuenta.r2.cloudflarestorage.com/privado/' + k }
-const responde = (status) => async () => ({ status, ok: status >= 200 && status < 300 })
+const responde = (status) => async () => ({ status, ok: status >= 200 && status < 300, headers: new Map() })
 
 test('el mismo bucket para lo privado y lo público es fatal', async () => {
   const cfg = storageConfig({ CONTENT_STORAGE: 'r2', ...CREDS, CONTENT_S3_BUCKET_PUBLIC: 'privado' })
@@ -89,6 +89,33 @@ test('un bucket privado que contesta sin credenciales está ABIERTO', async () =
 
   const cerrado = await checkBuckets(cfg, { priv: bucketFalso, pub: null }, responde(403))
   assert.equal(cerrado.ok, true, '403 = no autorizado, que es lo que queremos')
+})
+
+test('el camino público se comprueba subiendo y leyendo, no mirando el error', async () => {
+  const cfg = storageConfig({
+    CONTENT_STORAGE: 'r2', ...CREDS,
+    CONTENT_S3_BUCKET_PUBLIC: 'publico', CONTENT_S3_PUBLIC_KEY_ID: 'k', CONTENT_S3_PUBLIC_SECRET: 's',
+    CONTENT_PUBLIC_BASE_URL: 'https://c.dotrino.com'
+  })
+  const subidas = []
+  const pub = { urlFor: bucketFalso.urlFor, put: async (k) => { subidas.push(k); return { etag: '"x"' } } }
+
+  // Lo que devuelve un dominio que NO llega al bucket. Da igual si es la página de
+  // GitHub o la de Cloudflare: lo que delata es que no devuelve lo que se subió.
+  const noLlega = async (u) => (String(u).includes('c.dotrino.com')
+    ? { status: 404, ok: false, headers: new Map(), text: async () => '<!doctype html>…' }
+    : responde(403)())
+  const mal = await checkBuckets(cfg, { priv: bucketFalso, pub }, noLlega)
+  assert.equal(mal.ok, true, 'no es fatal: lo privado sigue funcionando')
+  assert.match(mal.warn.join(), /no sirve lo que hay en/)
+  assert.equal(subidas.length, 1, 'y la sonda se subió una sola vez')
+  assert.match(subidas[0], /^sha256-[0-9a-f]{64}$/, 'con su hash por nombre: repetirla no ensucia el bucket')
+
+  const llega = async (u) => (String(u).includes('c.dotrino.com')
+    ? { status: 200, ok: true, headers: new Map(), text: async () => 'dotrino!' }
+    : responde(403)())
+  const bien = await checkBuckets(cfg, { priv: bucketFalso, pub }, llega)
+  assert.deepEqual(bien.warn, [], 'y si el dominio devuelve la sonda, no hay nada que avisar')
 })
 
 test('si no se puede comprobar, se avisa pero no se bloquea', async () => {

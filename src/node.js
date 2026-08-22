@@ -14,10 +14,12 @@ export { isValidCid }
 
 export class ContentNode {
   /**
-   * @param {{ dir: string, maxBytes?: number, maxBlobBytes?: number, owner?: string|null }} opts
+   * @param {{ dir: string, maxBytes?: number, maxBlobBytes?: number, owner?: string|null,
+   *           store?: any, log?: (m:string)=>void }} opts
    *   dir: raíz de datos · maxBytes: cuota total de disco (0 = sin límite)
    *   maxBlobBytes: tamaño máximo por blob (0 = sin límite)
    *   owner: `ownerId` de la maestra (lo pone el agente al enlazar; null sin vault)
+   *   store: almacén ya montado (`storage.js`); por defecto, disco
    */
   constructor (opts) {
     if (!opts?.dir) throw new Error('falta opts.dir')
@@ -25,8 +27,13 @@ export class ContentNode {
     this.maxBytes = opts.maxBytes || 0
     this.maxBlobBytes = opts.maxBlobBytes || 0
     this.owner = opts.owner || null
-    this.store = new BlobStore(opts.dir)
+    // El almacén se puede INYECTAR (`storage.js` monta el de bucket cuando toca). Por
+    // defecto, disco: sin configuración, un node funciona con lo que hay en la máquina.
+    this.store = opts.store || new BlobStore(opts.dir)
     this.index = null
+    /** Subidas al bucket en curso, por cid: para no lanzar dos veces la misma. */
+    this._uploading = new Map()
+    this.log = opts.log || (() => {})
   }
 
   async init () {
@@ -55,6 +62,9 @@ export class ContentNode {
       }
     }
     this.index.upsert({ cid, size, mime, owner: this.owner, enc, acl, ttl, meta })
+    // Con bucket detrás, la subida va DESPUÉS de responder: quien sube no espera a la
+    // red. Hasta que el bucket confirme, este blob no es desalojable (§15.11).
+    if (!existed) this.backup(cid, { size, mime, public: acl === 'public' })
     return { cid, size, mime, existed }
   }
 
@@ -69,7 +79,47 @@ export class ContentNode {
    * §7.2); sin `public` explícito, no sale.
    */
   setAcl (cid, acl) {
-    return this.index.setAcl(cid, acl)
+    const ok = this.index.setAcl(cid, acl)
+    // Publicar mueve los bytes al bucket público, que es OTRO bucket (§15.1). Sin esto
+    // el blob quedaría marcado público y sin estar donde se sirve lo público.
+    if (ok && acl === 'public' && this.store.backed) {
+      const m = this.index.get(cid)
+      if (m && !m.enc) this.backup(cid, { size: m.size, mime: m.mime, public: true })
+    }
+    return ok
+  }
+
+  /**
+   * Sube un blob a su bucket y lo marca `remote` **solo cuando el bucket confirma**.
+   * Marcar al lanzar la subida es exactamente el error que deja perder contenido: un
+   * GC oportuno se llevaría la única copia que existe.
+   *
+   * No espera nadie a esto (se lanza y se olvida), pero un fallo se REPORTA: lo que no
+   * subió sigue siendo la cola pendiente del índice, y se reintenta al arrancar.
+   */
+  backup (cid, meta) {
+    if (!this.store.backed || this._uploading.has(cid)) return null
+    const p = this.store.upload(cid, meta)
+      .then(() => { this.index.setRemote(cid, true) })
+      .catch((e) => { this.log(`[almacén] no se pudo subir ${cid.slice(0, 14)}…: ${e.message}`) })
+      .finally(() => this._uploading.delete(cid))
+    this._uploading.set(cid, p)
+    return p
+  }
+
+  /**
+   * Reintenta lo que quedó sin subir. Se llama al arrancar: un reinicio a media subida
+   * no debe perder el pendiente, y por eso la cola es una consulta al índice y no una
+   * lista en memoria.
+   */
+  async backupPending (limit = 100) {
+    if (!this.store.backed) return { pending: 0 }
+    const rows = this.index.pendingUpload(limit)
+    for (const r of rows) {
+      const m = this.index.get(r.cid)
+      if (m) await this.backup(r.cid, { size: m.size, mime: m.mime, public: m.acl === 'public' })
+    }
+    return { pending: rows.length }
   }
 
   /**

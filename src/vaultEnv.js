@@ -77,12 +77,26 @@ export async function enrollToVault (qr, { dir = serviceDir(), onCode, onReplace
  * es el modo normal de quien se lo autohospeda (§15.12).
  *
  * @param {{ dir?: string, onSecrets?: (s:any)=>void, log?: (m:string)=>void,
- *           onChange?: () => void }} [opts]
+ *           onChange?: () => void, firstWaitMs?: number }} [opts]
  */
-export function startVaultConfig ({ dir = serviceDir(), onSecrets, log = console.log, onChange } = {}) {
-  if (!isEnrolled(dir)) return { enabled: false, close () {} }
+export function startVaultConfig ({ dir = serviceDir(), onSecrets, log = console.log, onChange, firstWaitMs = 20000 } = {}) {
+  if (!isEnrolled(dir)) return { enabled: false, ready: Promise.resolve(null), close () {} }
   let stopped = false
   let watcher = null
+  /** @type {(v:any)=>void} */
+  let llegaron = () => {}
+  const ready = new Promise((resolve) => { llegaron = resolve })
+
+  // La configuración decide QUÉ ALMACÉN usa este node, así que quien arranca la espera…
+  // pero con plazo. Si la bóveda está apagada, seguir esperando sería dejar al usuario
+  // sin su propio contenido local por una pieza que el ecosistema promete no exigir
+  // (`CLAUDE.md`: ninguna app puede requerir un daemon encendido). Al vencer el plazo se
+  // sigue en local, y cuando la configuración llegue, `watchEnv` reinicia con ella.
+  const plazo = setTimeout(() => {
+    log(`[vault] la bóveda no contestó en ${Math.round(firstWaitMs / 1000)}s: arranco con lo local y sigo esperando`)
+    llegaron(null)
+  }, firstWaitMs)
+  plazo.unref?.()
 
   ;(async () => {
     const { waitForSecrets } = await import('@dotrino/vault/service')
@@ -97,6 +111,8 @@ export function startVaultConfig ({ dir = serviceDir(), onSecrets, log = console
     const { injected, overridden } = applyEnv(secrets)
     log(`[vault] ${injected.length} valor(es) del vault aplicados al entorno`)
     if (overridden.length) log(`[vault] pisaron el entorno de esta máquina: ${overridden.join(', ')}`)
+    clearTimeout(plazo)
+    llegaron(secrets)
     onSecrets?.(secrets)
 
     // Sin `onUpdate`, `watchEnv` sale del proceso él mismo (con el código que
@@ -115,11 +131,13 @@ export function startVaultConfig ({ dir = serviceDir(), onSecrets, log = console
           }
         : {})
     })
-  })().catch((e) => log(`[vault] no se pudo leer la configuración: ${e.message}`))
+  })().catch((e) => { log(`[vault] no se pudo leer la configuración: ${e.message}`); clearTimeout(plazo); llegaron(null) })
 
   return {
     enabled: true,
-    close () { stopped = true; try { watcher?.close?.() } catch (_) {} }
+    /** Resuelve con la configuración, o con `null` si venció el plazo o falló. */
+    ready,
+    close () { stopped = true; clearTimeout(plazo); try { watcher?.close?.() } catch (_) {} }
   }
 }
 
