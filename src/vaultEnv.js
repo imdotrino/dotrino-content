@@ -92,8 +92,10 @@ export function startVaultConfig ({ dir = serviceDir(), onSecrets, log = console
   // sin su propio contenido local por una pieza que el ecosistema promete no exigir
   // (`CLAUDE.md`: ninguna app puede requerir un daemon encendido). Al vencer el plazo se
   // sigue en local, y cuando la configuración llegue, `watchEnv` reinicia con ella.
+  let vencio = false
   const plazo = setTimeout(() => {
-    log(`[vault] la bóveda no contestó en ${Math.round(firstWaitMs / 1000)}s: arranco con lo local y sigo esperando`)
+    vencio = true
+    log(`[vault] la bóveda no contestó en ${Math.round(firstWaitMs / 1000)}s: arranco con lo local y me reinicio cuando llegue`)
     llegaron(null)
   }, firstWaitMs)
   plazo.unref?.()
@@ -114,6 +116,18 @@ export function startVaultConfig ({ dir = serviceDir(), onSecrets, log = console
     clearTimeout(plazo)
     llegaron(secrets)
     onSecrets?.(secrets)
+
+    // LLEGÓ TARDE: el node ya arrancó, y arrancó con lo que había — o sea, con el
+    // almacén equivocado si la configuración dice otro. `watchEnv` no sirve aquí
+    // porque solo reacciona a CAMBIOS, y esto es la primera llegada: sin esto, un node
+    // que arrancó antes que su bóveda se queda en local para siempre, con la
+    // configuración correcta puesta en el entorno y sin usarla. Se sale, y el
+    // supervisor lo levanta ya con todo.
+    if (vencio) {
+      log('[vault] llegó la configuración después de arrancar: me reinicio para tomarla')
+      setTimeout(() => process.exit(0), 300)
+      return
+    }
 
     // Sin `onUpdate`, `watchEnv` sale del proceso él mismo (con el código que
     // corresponda: 0 si cambió la configuración, 1 si revocaron a este agente, para
