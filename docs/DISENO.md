@@ -1080,3 +1080,39 @@ los mismos cuatro pasos con otros nombres):
    limitado y no es para producción).
 4. Dos tokens *Object Read & Write*, **cada uno acotado a un solo bucket**, y guardarlos
    en el vault (`ns:content`, §15.14). El secreto se enseña una sola vez.
+
+## 16. Leer lo PÚBLICO de otro: el mensaje suelto por el proxio — CERRADO (2026-08-22)
+
+> Hasta aquí un tercero con tu enlace solo tenía la vista previa HTTP (§7.2) y, si
+> había bucket, la URL. **Eso dejaba la promesa a medias**: el enlace
+> `app/#ownerId/cid` nombra a un dueño, y lo mínimo es que su node conteste cuando
+> alguien llama. Esta sección es ese mínimo, y con él **eco se consume por la red de
+> Dotrino** sin que nadie necesite bucket.
+
+**La regla de entrada no cambia.** Las sesiones (`ops.js`) son de los aparatos del
+acta y lo siguen siendo. Lo que se añade es **otro mostrador, más pobre a propósito**:
+un mensaje suelto por el proxio, `content.fetch { cid }`, sin sesión, al que el node
+contesta **solo lo marcado `public` y en claro**. Un `not-found` no distingue «no
+existe» de «no es público» (mismo motivo que en §7.2: no confirmar qué guarda el
+node). Límite por remitente en el node, además del del proxio.
+
+**Cómo llega el tercero al node.** Por la guía de teléfonos de §3.1: lista el canal
+`content_<ownerId>` en cada proxio de la malla, toma los tokens y pregunta. El node
+no es autoridad de nada: **los bytes se verifican contra el `cid`** al llegar, así que
+un node equivocado, malicioso o de otro dueño solo puede fallar, no engañar. Eso está
+en la lib (`fetchPublic`), para que ninguna app lo reimplemente.
+
+**La URL es un atajo, y el node la reparte (§15.13).** La respuesta lleva `url` cuando
+el node tiene bucket público **y el bucket ya confirmó esos bytes** (`remote`): una
+URL que todavía da 404 no ayuda a nadie. Con `head: true` la app pide solo eso y
+decide: `<img src=url>` si hay atajo, bytes por la red si no. **Lo que no cabe en un
+mensaje (256 KB) se sirve solo por URL**; sin bucket, `too-large` — lo grande sigue
+siendo P2P (§13).
+
+**Lo que esto NO es.** No es un CDN por el proxio (de ahí el tope y el límite por
+remitente) y no cambia la frontera con el store (§3.2): la app sigue arrancando con el
+store solo, y lo público del content es lo que **otros** ven cuando el node está
+encendido —o siempre, si hay bucket—. Eco es el ejemplo trabajado: el eco y su imagen
+van públicos al node **con el mismo TTL de 24 h que el beacon** (lo efímero sigue
+siendo efímero), el pin geo lleva solo la referencia, y quien lo lee resuelve la
+imagen por URL o por la red. Sin node, eco publica texto, igual que antes.

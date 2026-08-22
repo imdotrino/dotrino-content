@@ -30,8 +30,10 @@
  * el sitio de siempre.
  */
 
-/** Nombre del canal de un dueño dentro de un proxio concreto. */
-export const channelFor = (nodeId, ownerId) => `${nodeId}/content_${ownerId}`
+import { channelFor } from '../lib/public.js'
+
+/** Nombre del canal de un dueño dentro de un proxio concreto (vive en la lib: el cliente del tercero lo necesita igual). */
+export { channelFor }
 
 /** Cada cuánto se re-publica (el proxio caduca las entradas de canal). */
 export const REPUBLISH_MS = 4 * 60 * 1000

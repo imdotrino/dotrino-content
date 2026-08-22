@@ -23,6 +23,7 @@ import { pubkeyId } from '@dotrino/identity/capabilities'
 import { startRemoteAgent } from '@dotrino/remote-agent/agent'
 import { dataDir, loadLink } from '@dotrino/remote-agent/link'
 import { startAnnounce } from './announce.js'
+import { startPublicFetch } from './fetch.js'
 import { createOps } from './ops.js'
 
 /** Carpeta de datos del enlace (NO es la de los blobs: el enlace es del aparato). */

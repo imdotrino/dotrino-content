@@ -132,9 +132,9 @@ if (!isEnrolled()) console.log('sin vault: configuración local (enrola con: dot
 await vaultConfig.ready
 
 const { openStore } = await import('../src/storage.js')
-const { store } = await openStore({ dir, log })
+const { store, cfg } = await openStore({ dir, log })
 
-const node = await new ContentNode({ dir, maxBytes, maxBlobBytes, store, log }).init()
+const node = await new ContentNode({ dir, maxBytes, maxBlobBytes, store, log, publicBase: cfg?.pub ? cfg.baseUrl : null }).init()
 // Lo que quedó sin subir en un arranque anterior. Se lanza y no se espera.
 node.backupPending().then(({ pending }) => { if (pending) log(`[almacén] ${pending} pendiente(s) de subir al bucket`) })
 const server = createServer(node)

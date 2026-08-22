@@ -30,6 +30,9 @@ export class ContentNode {
     // El almacén se puede INYECTAR (`storage.js` monta el de bucket cuando toca). Por
     // defecto, disco: sin configuración, un node funciona con lo que hay en la máquina.
     this.store = opts.store || new BlobStore(opts.dir)
+    // Base de la URL pública del bucket (§15.13). Sin bucket público es null y lo
+    // público viaja por la red, que es el camino que SIEMPRE existe.
+    this.publicBase = opts.publicBase || null
     this.index = null
     /** Subidas al bucket en curso, por cid: para no lanzar dos veces la misma. */
     this._uploading = new Map()
@@ -74,6 +77,18 @@ export class ContentNode {
   }
 
   /**
+   * La URL pública de un blob, o null. Es un ATAJO (§15.13), nunca el enlace: solo
+   * existe si hay bucket público, el blob está marcado público y en claro, y el
+   * bucket YA confirmó esos bytes (`remote`) — una URL que todavía da 404 no ayuda.
+   */
+  publicUrl (cid) {
+    if (!this.publicBase || !this.store.backed || typeof this.store.urlFor !== 'function') return null
+    const m = this.stat(cid)
+    if (!m || m.acl !== 'public' || m.enc || !m.remote) return null
+    return this.store.urlFor(cid, this.publicBase)
+  }
+
+  /**
    * Marca un blob como público o privado (`acl`). Es lo único que autoriza a que
    * los bytes salgan del node cuando esté encendido el modo público (DISENO.md
    * §7.2); sin `public` explícito, no sale.
@@ -98,8 +113,12 @@ export class ContentNode {
    * subió sigue siendo la cola pendiente del índice, y se reintenta al arrancar.
    */
   backup (cid, meta) {
-    if (!this.store.backed || this._uploading.has(cid)) return null
-    const p = this.store.upload(cid, meta)
+    if (!this.store.backed) return null
+    // Si ya hay una subida en curso (la privada, típicamente), esta va DETRÁS, no se
+    // descarta: publicar a mitad de la subida tiene que terminar en el bucket público.
+    const prev = this._uploading.get(cid)
+    const p = (prev ? prev.catch(() => {}) : Promise.resolve())
+      .then(() => this.store.upload(cid, meta))
       .then(() => { this.index.setRemote(cid, true) })
       .catch((e) => { this.log(`[almacén] no se pudo subir ${cid.slice(0, 14)}…: ${e.message}`) })
       .finally(() => this._uploading.delete(cid))

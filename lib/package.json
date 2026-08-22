@@ -1,21 +1,30 @@
 {
   "name": "@dotrino/content-client",
-  "version": "0.1.0",
-  "description": "Cliente de navegador del pilar de contenido de Dotrino: guarda y lee los bytes del usuario en su propio content node (sesión cifrada por el vault), cifra E2E y arma la referencia compartible ownerId+cid para el #fragment.",
+  "version": "0.2.0",
+  "description": "Cliente de navegador del pilar de contenido de Dotrino: guarda y lee los bytes del usuario en su propio content node (sesión cifrada por el vault), cifra E2E y arma la referencia compartible ownerId+cid para el #fragment y lee lo PÚBLICO de otros dueños por la red (fetchPublic).",
   "type": "module",
   "main": "./index.js",
   "exports": {
     ".": "./index.js",
     "./ref": "./ref.js",
     "./crypto": "./crypto.js",
-    "./thumb": "./thumb.js"
+    "./thumb": "./thumb.js",
+    "./public": "./public.js"
   },
-  "files": ["index.js", "ref.js", "crypto.js", "thumb.js"],
+  "files": [
+    "index.js",
+    "ref.js",
+    "crypto.js",
+    "thumb.js",
+    "public.js"
+  ],
   "peerDependencies": {
     "@dotrino/identity": ">=0.53.0",
     "@dotrino/remote-agent": ">=0.4.0"
   },
-  "engines": { "node": ">=18" },
+  "engines": {
+    "node": ">=18"
+  },
   "license": "MIT",
   "repository": {
     "type": "git",
@@ -23,5 +32,12 @@
     "directory": "lib"
   },
   "homepage": "https://content.dotrino.com/",
-  "keywords": ["dotrino", "content", "cid", "e2e", "privacy", "self-hosted"]
+  "keywords": [
+    "dotrino",
+    "content",
+    "cid",
+    "e2e",
+    "privacy",
+    "self-hosted"
+  ]
 }

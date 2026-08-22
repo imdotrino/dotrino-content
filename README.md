@@ -152,9 +152,10 @@ const back = await cc.get(ref) // comprueba el hash antes de devolver nada
   `putImageWithThumbnail()`, que sube el original **cifrado y privado** y la miniatura
   **en claro y pública** — que es el reparto que hace que haya tarjeta sin publicar el
   archivo.
-- **Todavía NO lee el contenido de otro usuario**: hoy solo se abre sesión con un
-  aparato de tu misma acta. Un tercero con tu enlace ve la vista previa (si la
-  encendiste) y podrá pedir los bytes cuando exista el transporte P2P.
+- **Lo PÚBLICO de otro usuario ya se lee por la red** (`fetchPublic` en la lib,
+  DISENO §16): un tercero con tu enlace encuentra tu node por el proxio y le pide el
+  `cid`; el node contesta solo lo marcado público y en claro, y los bytes se
+  verifican contra el `cid`. Lo privado sigue siendo de tus aparatos.
 
 ## Tests
 
