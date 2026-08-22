@@ -158,12 +158,14 @@ const parseMeta = (row) => {
  * pretende ser un visor. Lleva la imagen solo si el propio blob es una imagen o
  * si tiene una miniatura pública enlazada (`thumbnailCid`).
  */
-export function previewHtml ({ cid, row, base, appUrl, owner, index, imageCid = null }) {
+export function previewHtml ({ cid, row, base, appUrl, owner, index, imageCid = null, imageFallback = null }) {
   const m = parseMeta(row)
   const title = m.title || m.name || 'Contenido compartido'
   // La imagen de la tarjeta la decide la ruta, que es quien pudo COMPROBAR que
   // ese cid es una imagen de verdad y que sale por el puerto. Aquí solo se pinta.
-  const image = imageCid ? `${base}/c/${imageCid}` : null
+  // Sin imagen propia, la tarjeta de la app (`og.jpg`): una tarjeta sin imagen casi no
+  // se ve en X/LinkedIn, y la app es de quien es el contenido.
+  const image = imageCid ? `${base}/c/${imageCid}` : (imageFallback || null)
   const kb = Math.max(1, Math.round(row.size / 1024))
   const desc = m.description || `${row.mime} · ${kb} KB`
   // El enlace de "abrir" lleva la referencia en el #fragment: el servidor de la
@@ -270,7 +272,8 @@ export function createPublicServer (node, opts = {}) {
       if (top === 'p') {
         const body = previewHtml({
           cid, row, imageCid: await pickImage(cid, row),
-          base: baseUrl(req, opts.publicUrl), appUrl, owner: opts.owner ?? node.owner, index: !!opts.index
+          base: baseUrl(req, opts.publicUrl), appUrl, owner: opts.owner ?? node.owner, index: !!opts.index,
+          imageFallback: opts.imageFallback ?? `${appUrl.replace(/\/+$/, '')}/og.jpg`
         })
         res.writeHead(200, {
           'content-type': 'text/html; charset=utf-8',

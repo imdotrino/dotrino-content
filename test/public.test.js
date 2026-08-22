@@ -127,7 +127,9 @@ test('la tarjeta de un NO-imagen usa su miniatura, y solo si la miniatura es pú
   node.setThumbnail(docCid, thumbCid)
 
   let html = await (await fetch(`${base}/p/${docCid}`)).text()
-  assert.doesNotMatch(html, /og:image/, 'una miniatura privada no se publica por estar enlazada')
+  // La tarjeta lleva la imagen de la APP (og.jpg), nunca la miniatura privada por estar enlazada.
+  assert.doesNotMatch(html, /\/c\//, 'una miniatura privada no se publica por estar enlazada')
+  assert.match(html, /og:image" content="[^"]+\/og\.jpg"/)
 
   node.setAcl(thumbCid, 'public')
   html = await (await fetch(`${base}/p/${docCid}`)).text()
