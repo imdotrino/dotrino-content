@@ -76,9 +76,13 @@ export function startAnnounce ({ client, owner, quiet = false, intervalMs = REPU
         if (!quiet) console.error(`[content] no me pude anunciar en ${name}: ${e.message}`)
       }
     }
-    const first = !current.length && done.length
+    // Se avisa cuando CAMBIA en cuántos proxios está anunciado, no solo la primera vez.
+    // Antes solo hablaba al pasar de 0 a algo, así que un arranque que solo alcanzó uno de
+    // los dos decía «en 1 proxio(s)» y se callaba para siempre — aunque el tic siguiente ya
+    // estuviera en los dos. Leyendo ese log parecía una federación rota que no lo estaba.
+    const changed = done.length !== current.length
     current = done
-    if (first && !quiet) console.log(`[content] anunciado como node de ${owner.slice(0, 16)} en ${done.length} proxio(s) · token ${client.token}`)
+    if (changed && !quiet) console.log(`[content] anunciado como node de ${owner.slice(0, 16)} en ${done.length} proxio(s) · token ${client.token}`)
   }
 
   publishAll()
