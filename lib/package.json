@@ -19,8 +19,8 @@
     "public.js"
   ],
   "peerDependencies": {
-    "@dotrino/identity": ">=0.53.0",
-    "@dotrino/remote-agent": ">=0.4.0"
+    "@dotrino/identity": ">=0.61.0",
+    "@dotrino/remote-agent": ">=0.5.3"
   },
   "engines": {
     "node": ">=18"
