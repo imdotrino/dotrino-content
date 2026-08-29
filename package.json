@@ -1,6 +1,6 @@
 {
   "name": "dotrino-content",
-  "version": "0.3.7",
+  "version": "0.3.8",
   "description": "Nodo de contenido del ecosistema Dotrino: guarda los bytes del usuario direccionados por su hash (cid), en su propia maquina y, si el dueno quiere, respaldados en su propio bucket (R2, Backblaze, Hetzner, Storj o S3). Lo publico sale por URL directa; lo privado, cifrado y solo por la red Dotrino.",
   "type": "module",
   "bin": {

@@ -47,11 +47,24 @@ const fail = (rid, code, error) => ({ rid, ok: false, code, error })
  * llegue: ni campos de más ni textos sin fin.
  * @returns {{name?:string,title?:string,description?:string}|null}
  */
+/** Cuántos enlaces lleva una tarjeta, y cuánto puede medir cada uno. */
+const MAX_LINKS = 4
+const MAX_LINK_LEN = 300
+
 function cleanMeta (src) {
   if (!src || typeof src !== 'object') return null
   const out = Object.fromEntries(['name', 'title', 'description']
     .map((k) => [k, typeof src[k] === 'string' ? src[k].trim().slice(0, 300) : null])
     .filter(([, v]) => v))
+  // Los ENLACES del contenido (en un eco, la fuente de la que habla). Solo http(s)
+  // y contados: `meta` lo escribe quien publica y la tarjeta lo pinta como `href`,
+  // así que aquí se filtra en vez de creerse.
+  const links = (Array.isArray(src.links) ? src.links : [])
+    .filter((u) => typeof u === 'string')
+    .map((u) => u.trim())
+    .filter((u) => /^https?:\/\//i.test(u) && u.length <= MAX_LINK_LEN)
+    .slice(0, MAX_LINKS)
+  if (links.length) out.links = links
   return Object.keys(out).length ? out : null
 }
 

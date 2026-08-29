@@ -217,6 +217,31 @@ test('put admite la presentación de una vez, y descarta lo que no es campo cono
   })
 })
 
+test('la tarjeta guarda los ENLACES del contenido, y solo http(s)', async () => {
+  await withNode(async (node, ops) => {
+    const res = await ops({
+      rid: 1,
+      op: 'put',
+      data: Buffer.from('un eco').toString('base64'),
+      mime: 'application/json',
+      acl: ACL.PUBLIC,
+      meta: {
+        title: '@Dotrino',
+        links: ['https://medio.test/nota', 'javascript:alert(1)', 42, 'ftp://medio.test/x',
+          'https://a.test/1', 'https://b.test/2', 'https://c.test/3', 'https://d.test/4']
+      }
+    })
+    const meta = JSON.parse(node.stat(res.cid).meta)
+    // Ni un `javascript:` ni lo que no sea una cadena: la tarjeta los pinta como href.
+    assert.deepEqual(meta.links, ['https://medio.test/nota', 'https://a.test/1', 'https://b.test/2', 'https://c.test/3'],
+      'solo http(s), en orden, y como mucho cuatro')
+
+    // Sin enlaces válidos, el campo no existe (no un array vacío que hay que comprobar).
+    const solos = await ops({ rid: 2, op: 'meta', cid: res.cid, meta: { title: 'x', links: ['javascript:alert(1)'] } })
+    assert.equal(solos.meta.links, undefined)
+  })
+})
+
 test('put rechaza lo que no es un payload', async () => {
   await withNode(async (node, ops) => {
     assert.equal((await ops({ rid: 1, op: 'put' })).code, 'bad-request')
