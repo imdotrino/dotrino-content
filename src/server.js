@@ -133,10 +133,10 @@ async function route (node, req, res) {
     // Un blob CIFRADO no puede ser público, y se rechaza aquí además de en el índice:
     // es la misma frontera del §7.2, y una frontera que solo se comprueba en un sitio
     // acaba teniendo un camino que no pasa por ese sitio.
-    if (top === 'public' && meta.enc) return json(res, 400, { error: 'un blob cifrado no puede ser público' })
+    if (top === 'public' && meta.enc) return json(res, 400, { error: 'an encrypted blob cannot be public' })
     const ok = node.setAcl(cid, top === 'public' ? 'public' : null)
     return ok ? json(res, 200, { ok: true, acl: top === 'public' ? 'public' : null }) : json(res, 404, { error: 'not found' })
   }
 
-  json(res, 404, { error: 'ruta desconocida' })
+  json(res, 404, { error: 'unknown route' })
 }
