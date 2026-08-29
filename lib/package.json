@@ -1,6 +1,6 @@
 {
   "name": "@dotrino/content-client",
-  "version": "0.2.3",
+  "version": "0.2.4",
   "description": "Cliente de navegador del pilar de contenido de Dotrino: guarda y lee los bytes del usuario en su propio content node (sesión cifrada por el vault), cifra E2E y arma la referencia compartible ownerId+cid para el #fragment y lee lo PÚBLICO de otros dueños por la red (fetchPublic).",
   "type": "module",
   "main": "./index.js",
