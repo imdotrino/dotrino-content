@@ -85,7 +85,7 @@ test('un bucket privado que contesta sin credenciales está ABIERTO', async () =
   const cfg = storageConfig({ CONTENT_STORAGE: 'r2', ...CREDS })
   const open_ = await checkBuckets(cfg, { priv: fakeBucket, pub: null }, answers(404))
   assert.equal(open_.ok, false, '404 = el bucket contesta, solo que ese objeto no está')
-  assert.match(open_.fatal.join(), /abierto al mundo/)
+  assert.match(open_.fatal.join(), /open to the world/)
 
   const closed = await checkBuckets(cfg, { priv: fakeBucket, pub: null }, answers(403))
   assert.equal(closed.ok, true, '403 = no autorizado, que es lo que queremos')

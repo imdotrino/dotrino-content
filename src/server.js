@@ -73,7 +73,7 @@ async function route (node, req, res) {
   if (top === 'c' && cid) {
     if (!isValidCid(cid)) return json(res, 400, { error: 'invalid cid' })
     const meta = node.stat(cid)
-    if (!meta) return json(res, 404, { error: 'no existe' })
+    if (!meta) return json(res, 404, { error: 'not found' })
 
     if (req.method === 'DELETE') {
       await node.remove(cid)
@@ -117,7 +117,7 @@ async function route (node, req, res) {
   if (req.method === 'POST' && (top === 'pin' || top === 'unpin') && cid) {
     if (!isValidCid(cid)) return json(res, 400, { error: 'invalid cid' })
     const ok = node.pin(cid, top === 'pin')
-    return ok ? json(res, 200, { ok: true }) : json(res, 404, { error: 'no existe' })
+    return ok ? json(res, 200, { ok: true }) : json(res, 404, { error: 'not found' })
   }
 
   // PUBLICAR / despublicar. Existía solo por el plano de control, y eso dejaba sin poder
@@ -129,13 +129,13 @@ async function route (node, req, res) {
   if (req.method === 'POST' && (top === 'public' || top === 'private') && cid) {
     if (!isValidCid(cid)) return json(res, 400, { error: 'invalid cid' })
     const meta = node.stat(cid)
-    if (!meta) return json(res, 404, { error: 'no existe' })
+    if (!meta) return json(res, 404, { error: 'not found' })
     // Un blob CIFRADO no puede ser público, y se rechaza aquí además de en el índice:
     // es la misma frontera del §7.2, y una frontera que solo se comprueba en un sitio
     // acaba teniendo un camino que no pasa por ese sitio.
     if (top === 'public' && meta.enc) return json(res, 400, { error: 'un blob cifrado no puede ser público' })
     const ok = node.setAcl(cid, top === 'public' ? 'public' : null)
-    return ok ? json(res, 200, { ok: true, acl: top === 'public' ? 'public' : null }) : json(res, 404, { error: 'no existe' })
+    return ok ? json(res, 200, { ok: true, acl: top === 'public' ? 'public' : null }) : json(res, 404, { error: 'not found' })
   }
 
   json(res, 404, { error: 'ruta desconocida' })

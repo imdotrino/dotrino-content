@@ -95,7 +95,7 @@ export function startVaultConfig ({ dir = serviceDir(), onSecrets, log = console
   let expired = false
   const deadline = setTimeout(() => {
     expired = true
-    log(`[vault] no answer in ${Math.round(firstWaitMs / 1000)}s: starting with the local config and restarticio cuando llegue`)
+    log(`[vault] no answer in ${Math.round(firstWaitMs / 1000)}s: starting with the local config and restarting when it arrives`)
     arrive(null)
   }, firstWaitMs)
   deadline.unref?.()

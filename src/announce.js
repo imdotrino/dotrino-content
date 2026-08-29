@@ -82,7 +82,7 @@ export function startAnnounce ({ client, owner, quiet = false, intervalMs = REPU
     // estuviera en los dos. Leyendo ese log parecía una federación rota que no lo estaba.
     const changed = done.length !== current.length
     current = done
-    if (changed && !quiet) console.log(`[content] announced as node for ${owner.slice(0, 16)} en ${done.length} proxio(s) · token ${client.token}`)
+    if (changed && !quiet) console.log(`[content] announced as node for ${owner.slice(0, 16)} on ${done.length} proxio(s) · token ${client.token}`)
   }
 
   publishAll()

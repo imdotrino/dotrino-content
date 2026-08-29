@@ -98,7 +98,7 @@ export async function checkBuckets (cfg, { priv, pub }, f = fetch) {
   try {
     const r = await f(priv.urlFor('sha256-' + '0'.repeat(64)), { method: 'GET' })
     if (r.status === 404 || r.ok) {
-      fatal.push(`el bucket privado «${cfg.priv}» responde sin credenciales (HTTP ${r.status}): está abierto al mundo`)
+      fatal.push(`the private bucket "${cfg.priv}" answers without credentials (HTTP ${r.status}): it is open to the world`)
     }
   } catch (e) {
     warn.push(`no se pudo comprobar si el bucket privado está cerrado: ${e.message}`)
