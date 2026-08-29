@@ -219,7 +219,7 @@ test('sin enlace, el plano de control no arranca y lo dice', async () => {
   try {
     await assert.rejects(
       startContentAgent({ node, dir: path.join(root, 'vacio'), quiet: true }),
-      /no está enlazado/
+      /is not linked to a vault/
     )
   } finally {
     node.close()

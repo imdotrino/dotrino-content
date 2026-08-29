@@ -142,7 +142,7 @@ export class S3Bucket {
    */
   constructor ({ endpoint, bucket, accessKeyId, secretAccessKey, region = 'auto', fetch: f = fetch }) {
     if (!endpoint || !bucket || !accessKeyId || !secretAccessKey) {
-      throw new Error('S3Bucket: faltan endpoint, bucket o credenciales')
+      throw new Error('S3Bucket: missing endpoint, bucket or credentials')
     }
     this.base = `${String(endpoint).replace(/\/+$/, '')}/${bucket}`
     this.bucket = bucket
@@ -198,7 +198,7 @@ export class S3Bucket {
    * @param {{ sha256?: string, size?: number, contentType?: string, cacheControl?: string }} [o]
    */
   async put (key, body, { sha256 = '', size = 0, contentType = '', cacheControl = '' } = {}) {
-    if (!sha256) throw new Error('S3Bucket.put: hace falta el sha256 del contenido')
+    if (!sha256) throw new Error('S3Bucket.put: the sha256 of the content is required')
     /** @type {Record<string,string>} */
     const headers = {}
     if (contentType) headers['content-type'] = contentType

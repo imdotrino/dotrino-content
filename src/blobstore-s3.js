@@ -33,7 +33,7 @@ const IMMUTABLE = 'public, max-age=31536000, immutable'
 
 /** Del `cid` a la clave del objeto. Sin prefijos: el bucket ya separa público de privado. */
 const keyOf = (cid) => {
-  if (!isValidCid(cid)) throw new Error(`cid inválido: ${cid}`)
+  if (!isValidCid(cid)) throw new Error(`invalid cid: ${cid}`)
   return cid
 }
 
@@ -46,7 +46,7 @@ export class S3BlobStore {
    * @param {(m:string)=>void} [o.log]
    */
   constructor ({ root, priv, pub = null, log = () => {} }) {
-    if (!priv) throw new Error('S3BlobStore: falta el bucket privado')
+    if (!priv) throw new Error('S3BlobStore: the private bucket is missing')
     this.cache = new BlobStore(root)
     this.priv = priv
     this.pub = pub
@@ -63,7 +63,7 @@ export class S3BlobStore {
   /** El bucket que le toca a un blob según su ACL. */
   bucketFor (isPublic) {
     if (!isPublic) return this.priv
-    if (!this.pub) throw new Error('este node no tiene bucket público (CONTENT_S3_BUCKET_PUBLIC)')
+    if (!this.pub) throw new Error('this node has no public bucket (CONTENT_S3_BUCKET_PUBLIC)')
     return this.pub
   }
 

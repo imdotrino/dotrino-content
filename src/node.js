@@ -22,7 +22,7 @@ export class ContentNode {
    *   store: almacén ya montado (`storage.js`); por defecto, disco
    */
   constructor (opts) {
-    if (!opts?.dir) throw new Error('falta opts.dir')
+    if (!opts?.dir) throw new Error('opts.dir is required')
     this.dir = opts.dir
     this.maxBytes = opts.maxBytes || 0
     this.maxBlobBytes = opts.maxBlobBytes || 0
@@ -61,7 +61,7 @@ export class ContentNode {
       const over = (this.index.cachedBytes() + size) - this.maxBytes
       if (over > 0 && this.gc({ needBytes: over }).freed < over) {
         await this.store.remove(cid)
-        throw Object.assign(new Error('cuota de disco excedida'), { code: 'ENOSPC' })
+        throw Object.assign(new Error('disk quota exceeded'), { code: 'ENOSPC' })
       }
     }
     this.index.upsert({ cid, size, mime, owner: this.owner, enc, acl, ttl, meta })
@@ -120,7 +120,7 @@ export class ContentNode {
     const p = (prev ? prev.catch(() => {}) : Promise.resolve())
       .then(() => this.store.upload(cid, meta))
       .then(() => { this.index.setRemote(cid, true) })
-      .catch((e) => { this.log(`[almacén] no se pudo subir ${cid.slice(0, 14)}…: ${e.message}`) })
+      .catch((e) => { this.log(`[storage] could not upload ${cid.slice(0, 14)}…: ${e.message}`) })
       .finally(() => this._uploading.delete(cid))
     this._uploading.set(cid, p)
     return p

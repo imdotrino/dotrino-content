@@ -49,8 +49,8 @@ export function createServer (node) {
       await route(node, req, res)
     } catch (err) {
       if (res.headersSent) { res.destroy(); return }
-      if (err.code === 'ETOOBIG') return json(res, 413, { error: 'blob demasiado grande' })
-      if (err.code === 'ENOSPC') return json(res, 507, { error: 'cuota de disco excedida' })
+      if (err.code === 'ETOOBIG') return json(res, 413, { error: 'blob too large' })
+      if (err.code === 'ENOSPC') return json(res, 507, { error: 'disk quota exceeded' })
       json(res, 500, { error: err.message })
     }
   })
@@ -71,7 +71,7 @@ async function route (node, req, res) {
   }
 
   if (top === 'c' && cid) {
-    if (!isValidCid(cid)) return json(res, 400, { error: 'cid inválido' })
+    if (!isValidCid(cid)) return json(res, 400, { error: 'invalid cid' })
     const meta = node.stat(cid)
     if (!meta) return json(res, 404, { error: 'no existe' })
 
@@ -80,7 +80,7 @@ async function route (node, req, res) {
       return json(res, 200, { ok: true })
     }
     if (req.method !== 'GET' && req.method !== 'HEAD') {
-      return json(res, 405, { error: 'método no permitido' })
+      return json(res, 405, { error: 'method not allowed' })
     }
 
     const headers = {
@@ -115,7 +115,7 @@ async function route (node, req, res) {
   if (req.method === 'GET' && top === 'stats') return json(res, 200, node.stats())
 
   if (req.method === 'POST' && (top === 'pin' || top === 'unpin') && cid) {
-    if (!isValidCid(cid)) return json(res, 400, { error: 'cid inválido' })
+    if (!isValidCid(cid)) return json(res, 400, { error: 'invalid cid' })
     const ok = node.pin(cid, top === 'pin')
     return ok ? json(res, 200, { ok: true }) : json(res, 404, { error: 'no existe' })
   }
@@ -127,7 +127,7 @@ async function route (node, req, res) {
   // Con bucket detrás, marcar público MUEVE los bytes al bucket público, que es otro
   // (§15.1): por eso pasa por `node.setAcl` y no por el índice a secas.
   if (req.method === 'POST' && (top === 'public' || top === 'private') && cid) {
-    if (!isValidCid(cid)) return json(res, 400, { error: 'cid inválido' })
+    if (!isValidCid(cid)) return json(res, 400, { error: 'invalid cid' })
     const meta = node.stat(cid)
     if (!meta) return json(res, 404, { error: 'no existe' })
     // Un blob CIFRADO no puede ser público, y se rechaza aquí además de en el índice:

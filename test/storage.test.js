@@ -37,7 +37,7 @@ test('un proveedor desconocido no se inventa: se queda en local y lo dice', asyn
   const d = await dir(); const said = []
   const { store } = await openStore({ dir: d, env: { CONTENT_STORAGE: 'dropbox' }, log: (m) => said.push(m) })
   assert.equal(store.backed, false)
-  assert.match(said.join('\n'), /no es un proveedor conocido/)
+  assert.match(said.join('\n'), /is not a known provider/)
   await rm(d, { recursive: true, force: true })
 })
 
@@ -78,7 +78,7 @@ test('el mismo bucket para lo privado y lo público es fatal', async () => {
   const cfg = storageConfig({ CONTENT_STORAGE: 'r2', ...CREDS, CONTENT_S3_BUCKET_PUBLIC: 'privado' })
   const r = await checkBuckets(cfg, { priv: fakeBucket, pub: fakeBucket }, answers(403))
   assert.equal(r.ok, false)
-  assert.match(r.fatal.join(), /son el mismo/)
+  assert.match(r.fatal.join(), /buckets are the same/)
 })
 
 test('un bucket privado que contesta sin credenciales está ABIERTO', async () => {

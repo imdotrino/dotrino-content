@@ -83,7 +83,7 @@ export async function checkBuckets (cfg, { priv, pub }, f = fetch) {
 
   // 1. El mismo bucket para las dos cosas: lo privado acabaría en el que tiene dominio.
   if (cfg.pub && cfg.pub === cfg.priv) {
-    fatal.push('el bucket privado y el público son el mismo: lo cifrado acabaría en el que tiene dominio')
+    fatal.push('the private and public buckets are the same: encrypted blobs would land in the one with a domain')
   }
 
   // 2. El privado NO puede responder sin credenciales. Se pide un objeto que no existe:
@@ -143,12 +143,12 @@ export async function openStore ({ dir, env = process.env, log = () => {}, check
   if (cfg.kind === 'local') return { store: await new BlobStore(dir).init(), cfg }
 
   if (!cfg.provider) {
-    log(`[almacén] CONTENT_STORAGE=«${cfg.kind}» no es un proveedor conocido (${Object.keys(PROVIDERS).join(', ')}); sigo en local`)
+    log(`[storage] CONTENT_STORAGE="${cfg.kind}" is not a known provider (${Object.keys(PROVIDERS).join(', ')}); staying on LOCAL`)
     return { store: await new BlobStore(dir).init(), cfg }
   }
   if (cfg.missing.length) {
-    log(`[almacén] ${cfg.kind} pedido pero faltan variables: ${cfg.missing.join(', ')}`)
-    log('[almacén] sigo en LOCAL: un almacén a medio configurar es peor que ninguno')
+    log(`[storage] ${cfg.kind} requested but these variables are missing: ${cfg.missing.join(', ')}`)
+    log('[storage] staying on LOCAL: a half-configured store is worse than none')
     return { store: await new BlobStore(dir).init(), cfg }
   }
 
@@ -160,15 +160,15 @@ export async function openStore ({ dir, env = process.env, log = () => {}, check
 
   if (check) {
     const { ok, fatal, warn } = await checkBuckets(cfg, { priv, pub }, f)
-    for (const w of warn) log(`[almacén] ⚠ ${w}`)
+    for (const w of warn) log(`[storage] ⚠ ${w}`)
     if (!ok) {
-      for (const e of fatal) log(`[almacén] ✖ ${e}`)
-      log('[almacén] sigo en LOCAL hasta que eso se arregle')
+      for (const e of fatal) log(`[storage] ✖ ${e}`)
+      log('[storage] staying on LOCAL until that is fixed')
       return { store: await new BlobStore(dir).init(), cfg }
     }
   }
 
-  log(`[almacén] ${cfg.kind}: privado «${cfg.priv}»${cfg.pub ? `, público «${cfg.pub}» en ${cfg.baseUrl}` : ' (sin bucket público: lo público viaja por la red)'}`)
+  log(`[storage] ${cfg.kind}: private "${cfg.priv}"${cfg.pub ? `, public "${cfg.pub}" at ${cfg.baseUrl}` : ' (no public bucket: public reads go over the network)'}`)
   return { store: await new S3BlobStore({ root: dir, priv, pub, log }).init(), cfg }
 }
 

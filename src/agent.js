@@ -53,10 +53,10 @@ export const isLinked = (dir = linkDir()) => {
 export async function startContentAgent ({
   node, dir = linkDir(), proxyUrl, version = null, client, quiet = false, onRevoked, announce = true
 } = {}) {
-  if (!node) throw new Error('startContentAgent: falta node')
+  if (!node) throw new Error('startContentAgent: node is required')
   const link = loadLink(dir)
   if (!link?.iss) {
-    throw new Error('este node no está enlazado a un vault. Ejecuta primero: dotrino-content enroll <código>')
+    throw new Error('this node is not linked to a vault. Run first: dotrino-content enroll <code>')
   }
 
   // El node representa a la maestra que lo certificó: su huella es el `ownerId`.

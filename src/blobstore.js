@@ -44,7 +44,7 @@ export class BlobStore {
 
   /** Path en disco de un cid (no comprueba existencia). */
   pathFor (cid) {
-    if (!isValidCid(cid)) throw new Error(`cid inválido: ${cid}`)
+    if (!isValidCid(cid)) throw new Error(`invalid cid: ${cid}`)
     const hex = cid.slice('sha256-'.length)
     return path.join(this.blobsDir, hex.slice(0, 2), hex.slice(2, 4), cid)
   }
@@ -73,7 +73,7 @@ export class BlobStore {
       transform (chunk, _enc, cb) {
         size += chunk.length
         if (opts.maxBytes && size > opts.maxBytes) {
-          cb(Object.assign(new Error('blob demasiado grande'), { code: 'ETOOBIG' }))
+          cb(Object.assign(new Error('blob too large'), { code: 'ETOOBIG' }))
           return
         }
         hash.update(chunk)

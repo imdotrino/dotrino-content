@@ -95,7 +95,7 @@ export function startVaultConfig ({ dir = serviceDir(), onSecrets, log = console
   let expired = false
   const deadline = setTimeout(() => {
     expired = true
-    log(`[vault] la bóveda no contestó en ${Math.round(firstWaitMs / 1000)}s: arranco con lo local y me reinicio cuando llegue`)
+    log(`[vault] no answer in ${Math.round(firstWaitMs / 1000)}s: starting with the local config and restarticio cuando llegue`)
     arrive(null)
   }, firstWaitMs)
   deadline.unref?.()
@@ -106,13 +106,13 @@ export function startVaultConfig ({ dir = serviceDir(), onSecrets, log = console
     const secrets = await waitForSecrets({
       dir,
       ns: NS,
-      onRetry: (e, delay) => log(`[vault] sin configuración todavía (${e.message}); reintento en ${Math.round(delay / 1000)}s`)
+      onRetry: (e, delay) => log(`[vault] no config yet (${e.message}); retrying in ${Math.round(delay / 1000)}s`)
     })
     if (stopped) return
 
     const { injected, overridden } = applyEnv(secrets)
-    log(`[vault] ${injected.length} valor(es) del vault aplicados al entorno`)
-    if (overridden.length) log(`[vault] pisaron el entorno de esta máquina: ${overridden.join(', ')}`)
+    log(`[vault] applied ${injected.length} value(s) from the vault to the environment`)
+    if (overridden.length) log(`[vault] these overrode the machine environment: ${overridden.join(', ')}`)
     clearTimeout(deadline)
     arrive(secrets)
     onSecrets?.(secrets)
@@ -124,7 +124,7 @@ export function startVaultConfig ({ dir = serviceDir(), onSecrets, log = console
     // configuración correcta puesta en el entorno y sin usarla. Se sale, y el
     // supervisor lo levanta ya con todo.
     if (expired) {
-      log('[vault] llegó la configuración después de arrancar: me reinicio para tomarla')
+      log('[vault] config arrived after startup: restarting to pick it up')
       setTimeout(() => process.exit(0), 300)
       return
     }
@@ -139,13 +139,13 @@ export function startVaultConfig ({ dir = serviceDir(), onSecrets, log = console
       ...(onChange
         ? {
             onUpdate: ({ reason }) => {
-              log(`[vault] ${reason === 'revoked' ? 'este aparato fue revocado' : 'llegó configuración nueva'}`)
+              log(`[vault] ${reason === 'revoked' ? 'this device was revoked' : 'new config arrived'}`)
               onChange()
             }
           }
         : {})
     })
-  })().catch((e) => { log(`[vault] no se pudo leer la configuración: ${e.message}`); clearTimeout(deadline); arrive(null) })
+  })().catch((e) => { log(`[vault] could not read the config: ${e.message}`); clearTimeout(deadline); arrive(null) })
 
   return {
     enabled: true,

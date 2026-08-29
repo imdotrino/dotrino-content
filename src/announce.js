@@ -51,8 +51,8 @@ export const REPUBLISH_MS = 4 * 60 * 1000
  * @returns {{ channels: () => string[], close: () => void }}
  */
 export function startAnnounce ({ client, owner, quiet = false, intervalMs = REPUBLISH_MS }) {
-  if (!client) throw new Error('startAnnounce: falta client')
-  if (!owner) throw new Error('startAnnounce: falta owner')
+  if (!client) throw new Error('startAnnounce: client is required')
+  if (!owner) throw new Error('startAnnounce: owner is required')
 
   let stopped = false
   let current = []
@@ -73,7 +73,7 @@ export function startAnnounce ({ client, owner, quiet = false, intervalMs = REPU
         await client.publish(name, { app: 'content', owner })
         done.push(name)
       } catch (e) {
-        if (!quiet) console.error(`[content] no me pude anunciar en ${name}: ${e.message}`)
+        if (!quiet) console.error(`[content] could not announce on ${name}: ${e.message}`)
       }
     }
     // Se avisa cuando CAMBIA en cuántos proxios está anunciado, no solo la primera vez.
@@ -82,7 +82,7 @@ export function startAnnounce ({ client, owner, quiet = false, intervalMs = REPU
     // estuviera en los dos. Leyendo ese log parecía una federación rota que no lo estaba.
     const changed = done.length !== current.length
     current = done
-    if (changed && !quiet) console.log(`[content] anunciado como node de ${owner.slice(0, 16)} en ${done.length} proxio(s) · token ${client.token}`)
+    if (changed && !quiet) console.log(`[content] announced as node for ${owner.slice(0, 16)} en ${done.length} proxio(s) · token ${client.token}`)
   }
 
   publishAll()
@@ -120,7 +120,7 @@ export function startAnnounce ({ client, owner, quiet = false, intervalMs = REPU
  * @returns {Promise<string[]>} tokens (direcciones en el proxy)
  */
 export async function findNodes ({ client, owner }) {
-  if (!client || !owner) throw new Error('findNodes: faltan client u owner')
+  if (!client || !owner) throw new Error('findNodes: client and owner are required')
   const known = Array.isArray(client.knownNodes) && client.knownNodes.length
     ? client.knownNodes
     : (client.node ? [client.node] : [])
