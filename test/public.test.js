@@ -120,6 +120,21 @@ test('el permalink trae las etiquetas OG y el enlace con la referencia en el #fr
   assert.match(html, /name="robots" content="noindex, nofollow"/)
 })
 
+test('el permalink pinta el texto ENTERO y los enlaces del contenido', async () => {
+  const cid = await publish(PNG)
+  const text = 'Desde el 16 de diciembre la política permite usar el contenido público como datos de entrenamiento, '
+    + 'sin una opción de exclusión sencilla. Otra red activó algo parecido por defecto en noviembre. #IA'
+  node.setMeta(cid, { title: '@Dotrino', description: text, links: ['https://drainpipe.io/ai-data-privacy-2026/', 'javascript:alert(1)'] })
+  const html = await (await fetch(`${base}/p/${cid}`)).text()
+  // Entero: lo que se publicó es lo que se lee, sin cortar a mitad de frase.
+  assert.ok(html.includes(text), 'el texto no se recorta en la tarjeta')
+  assert.match(html, /<a href="https:\/\/drainpipe\.io\/ai-data-privacy-2026\/" rel="noopener nofollow">/)
+  // Un `javascript:` en `meta` no llega a ser un href.
+  assert.doesNotMatch(html, /javascript:/)
+  // El enlace a la app es un ENLACE, no un botón pintado de azul.
+  assert.match(html, /<a class="open" [^>]*>Abrir en eco\.dotrino\.com<\/a>/)
+})
+
 test('la tarjeta de un NO-imagen usa su miniatura, y solo si la miniatura es pública', async () => {
   const { cid: docCid } = await put(Buffer.from('%PDF-1.4 nada'), { mime: 'application/pdf' })
   node.setAcl(docCid, 'public')

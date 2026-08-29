@@ -148,6 +148,18 @@ function baseUrl (req, configured) {
   return `${proto}://${host}`
 }
 
+/** El host de una URL, o '' si no se puede leer. */
+const hostOf = (u) => { try { return new URL(u).hostname } catch { return '' } }
+
+/** Un enlace legible: se cae el `https://` y la cola larga, no el destino. */
+function shortLink (u) {
+  try {
+    const url = new URL(u)
+    const tail = (url.pathname === '/' ? '' : url.pathname) + url.search
+    return url.hostname.replace(/^www\./, '') + (tail.length > 40 ? tail.slice(0, 39) + '…' : tail)
+  } catch { return u }
+}
+
 const parseMeta = (row) => {
   if (!row?.meta) return {}
   try { return JSON.parse(row.meta) || {} } catch { return {} }
@@ -157,6 +169,12 @@ const parseMeta = (row) => {
  * Página del permalink (§7.3). Es una tarjeta y un enlace, y se dice así: no
  * pretende ser un visor. Lleva la imagen solo si el propio blob es una imagen o
  * si tiene una miniatura pública enlazada (`thumbnailCid`).
+ *
+ * El texto se pinta ENTERO: recortarlo aquí dejaba tarjetas cortadas a mitad de
+ * frase, y quien decide cuánto texto hay es quien lo publicó, no esta página.
+ * Si el contenido trae enlaces (`meta.links` — en un eco, la fuente de la que
+ * habla), se pintan: sin ellos la tarjeta cuenta la noticia y esconde de dónde
+ * salió.
  */
 export function previewHtml ({ cid, row, base, appUrl, owner, index, imageCid = null, imageFallback = null }) {
   const m = parseMeta(row)
@@ -171,6 +189,11 @@ export function previewHtml ({ cid, row, base, appUrl, owner, index, imageCid = 
   // El enlace de "abrir" lleva la referencia en el #fragment: el servidor de la
   // app nunca la ve (CLAUDE.md §SEO). Sin `owner` no hay referencia que armar.
   const open = owner ? `${appUrl.replace(/\/+$/, '')}/#${owner}/${cid}` : null
+  // Solo http(s): `meta` lo escribe quien publica, y un `javascript:` en un href
+  // sería un agujero abierto de par en par.
+  const links = (Array.isArray(m.links) ? m.links : [])
+    .map((u) => String(u)).filter((u) => /^https?:\/\//i.test(u)).slice(0, 4)
+  const openLabel = `Abrir en ${hostOf(appUrl) || 'la app'}`
   return `<!doctype html>
 <html lang="es">
 <head>
@@ -198,9 +221,12 @@ ${image ? `<meta name="twitter:image" content="${esc(image)}">` : ''}
   main { max-width: 34rem; text-align: center; }
   img { max-width: 100%; height: auto; border-radius: .75rem; }
   h1 { font-size: 1.25rem; margin: 1rem 0 .25rem; }
-  p { color: #9aa7b4; margin: .25rem 0 1.25rem; }
-  a.open { display: inline-block; background: #2f6bff; color: #fff; text-decoration: none;
-           padding: .7rem 1.4rem; border-radius: .6rem; font-weight: 600; }
+  p { color: #9aa7b4; margin: .25rem 0 1.25rem; text-align: left; }
+  ul.links { list-style: none; margin: 0 0 1.25rem; padding: 0; text-align: left;
+             overflow-wrap: anywhere; }
+  ul.links li { margin: .2rem 0; }
+  a { color: #6ea0ff; }
+  a.open { font-weight: 600; }
   small { display: block; margin-top: 1.5rem; color: #6b7787; }
   small a { color: #6b7787; }
 </style>
@@ -210,7 +236,8 @@ ${image ? `<meta name="twitter:image" content="${esc(image)}">` : ''}
 ${image ? `<img src="${esc(image)}" alt="${esc(title)}">` : ''}
 <h1>${esc(title)}</h1>
 <p>${esc(desc)}</p>
-${open ? `<a class="open" href="${esc(open)}">Abrir</a>` : ''}
+${links.length ? `<ul class="links">${links.map((u) => `<li><a href="${esc(u)}" rel="noopener nofollow">${esc(shortLink(u))}</a></li>`).join('')}</ul>` : ''}
+${open ? `<a class="open" href="${esc(open)}">${esc(openLabel)}</a>` : ''}
 <small>Servido desde el node de su dueño · <a href="https://content.dotrino.com/">Dotrino</a></small>
 </main>
 </body>
