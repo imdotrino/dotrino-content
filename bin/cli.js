@@ -100,8 +100,9 @@ if (cmd === 'enroll') {
         console.log('  (el código NO viaja por la red: lo tipeas tú)')
       }
     })
-    const days = Math.round((res.cert.exp - Date.now()) / 86400000)
-    console.log(`\nlisto: node enlazado. Certificado válido ${days} días (se renueva solo).`)
+    // El papel ya no vence por tiempo: vale mientras el acta lo diga, y se rehace solo
+    // cuando cambias permisos. Decir «válido N días» era describir un reloj que ya no existe.
+    console.log(`\nlisto: node enlazado. El permiso vale mientras lo diga tu bóveda; si se lo quitas, deja de valer en el acto.`)
     console.log(`identidad en ${serviceDir()}  ·  enlace en ${linkDir()}`)
     console.log(`\nahora carga su configuración en la bóveda (namespace «${NS}»):`)
     console.log('  dotrino-vault secret set content CONTENT_STORAGE=local --public')
