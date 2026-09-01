@@ -32,10 +32,20 @@ async function makeMaster () {
   )
   const publickey = JSON.stringify(await crypto.subtle.exportKey('jwk', pair.publicKey))
   let n = 0
-  const certFor = async (sub, scope = [SIGN_SCOPE]) => signDelegationWith(pair.privateKey, publickey, {
-    sub, scope, iat: Date.now() - 1000, exp: Date.now() + 20 * DAY, nonce: 'n' + (++n)
-  })
-  return { publickey, certFor }
+  // ACTA mínima: el papel ya no vence por reloj, lleva el `seq` del acta con el que se
+  // emitió, y quien verifica necesita saber quién puede sellar en este perfil.
+  const acta = {
+    v: 5, profileId: publickey, sealedBy: publickey, seq: 1,
+    members: [{ pub: publickey, caps: ['sign', 'read', 'store', 'sealer'] }],
+    renounced: []
+  }
+  const certFor = async (sub, scope = [SIGN_SCOPE], { admitir = true } = {}) => {
+    if (admitir && !acta.members.some((m) => m.pub === sub)) acta.members.push({ pub: sub, caps: ['sign'] })
+    return signDelegationWith(pair.privateKey, publickey, {
+      sub, scope, iat: Date.now() - 1000, seq: acta.seq, nonce: 'n' + (++n)
+    })
+  }
+  return { publickey, certFor, acta }
 }
 
 /**
@@ -78,7 +88,10 @@ function fakeVault (bus, master) {
   const ep = bus.endpoint('vault-token')
   ep.identify({ data: { publickey: master.publickey } })
   ep.on('message', (from, p) => {
-    if (p?.type === VMSG.DEVICES) ep.send(from, { type: VMSG.DEVICES_RESULT, devices: [], revoked: [] })
+    // EL ACTA VIAJA CON LA LISTA, y sin ella el agente no puede juzgar a nadie: es con lo
+    // que sabe quién puede sellar en este perfil. Antes bastaba con la maestra; ahora manda
+    // el acta, y no mandarla significa «no sé quién eres» — que es lo correcto.
+    if (p?.type === VMSG.DEVICES) ep.send(from, { type: VMSG.DEVICES_RESULT, devices: [], revoked: [], acta: master.acta })
   })
   return ep
 }
@@ -127,6 +140,12 @@ async function setup () {
   await mkdir(linkDir, { recursive: true })
 
   const master = await makeMaster()
+  // El aparato de la app entra en el acta ANTES de que arranque el agente: el agente se
+  // queda con el acta que le da la bóveda en su primer tic, igual que en producción. Un
+  // miembro añadido después no le llega hasta el siguiente refresco, y eso es correcto —
+  // su política es tan fresca como su última consulta.
+  const appDevice = await makeDeviceKey({ label: 'app' })
+  await master.certFor(appDevice.publickey)   // lo admite en el acta
   const nodeDevice = await makeDeviceKey({ label: 'content' })
   const link = {
     device: nodeDevice,
@@ -146,7 +165,7 @@ async function setup () {
   })
 
   return {
-    root, node, agent, master, bus,
+    root, node, agent, master, bus, appDevice,
     async cleanup () {
       agent.close(); node.close()
       await rm(root, { recursive: true, force: true })
@@ -157,7 +176,7 @@ async function setup () {
 test('un aparato del mismo vault administra el node por el canal cifrado', async () => {
   const s = await setup()
   try {
-    const app = await makeDeviceKey({ label: 'app' })
+    const app = s.appDevice   // ya estaba en el acta antes de arrancar el agente
     const client = await connectClient(s.bus, {
       device: app, cert: await s.master.certFor(app.publickey), agentPubkey: s.agent.machine
     })
@@ -198,15 +217,22 @@ test('un aparato de OTRA maestra no abre sesión: el node no le contesta nada', 
   } finally { await s.cleanup() }
 })
 
-test('un cert vencido no sirve, aunque la maestra sea la correcta', async () => {
+/**
+ * El papel ya no vence por reloj: vale mientras el acta lo diga. Lo que sí lo mata es que
+ * el aparato deje de estar en el acta — y esa es la prueba que sustituye a la del
+ * vencimiento, porque es la que de verdad protege: quitar un aparato surte efecto en el
+ * acto, sin esperar a que caduque nada.
+ */
+test('a un aparato que el acta ya no nombra no se le abre sesión', async () => {
   const s = await setup()
   try {
-    const stale = await makeDeviceKey({ label: 'viejo' })
-    const expired = await s.master.certFor(stale.publickey)
-    expired.exp = Date.now() - 1000
+    // Se le emite el papel pero NO entra en el acta. El papel está bien firmado y no vence;
+    // lo único que le falta es que el acta lo nombre, y eso basta para que no pase.
+    const fuera = await makeDeviceKey({ label: 'sin sitio en el acta' })
+    const cert = await s.master.certFor(fuera.publickey, [SIGN_SCOPE], { admitir: false })
     await assert.rejects(
       connectClient(s.bus, {
-        device: stale, cert: expired, agentPubkey: s.agent.machine, token: 'stale-token'
+        device: fuera, cert, agentPubkey: s.agent.machine, token: 'stale-token'
       }),
       /no autorizado/i
     )
