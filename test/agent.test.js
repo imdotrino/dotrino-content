@@ -64,6 +64,13 @@ function makeBus () {
         return () => { handlers[ev] = (handlers[ev] || []).filter((h) => h !== cb) }
       },
       async identify ({ data }) { byPubkey.set(data.publickey, token) },
+      // El agente pide `identifyAs`, que es como se identifica todo el ecosistema desde
+      // `@dotrino/proxy-client` 0.18: el sobre lo arma el pilar y lleva el destinatario.
+      // El doble tiene que parecerse al de verdad, o prueba otra cosa.
+      async identifyAs ({ publickey, sign }) {
+        await sign({ op: 'identify', aud: 'wss://bus', publickey, token, ts: Date.now() })
+        byPubkey.set(publickey, token)
+      },
       send (to, obj) { deliver(to, token, obj) },
       sendByPubkey (pubkey, obj) {
         const to = byPubkey.get(pubkey)
