@@ -247,7 +247,7 @@ al vault del dueño con el **mismo mecanismo que `dotrino-terminal`** (no se
 reinventa):
 
 - **Enrolar una vez:** en el vault `dotrino-vault pair` (QR/JSON) → en el node
-  `npx dotrino-content enroll` (pega el QR). El node recibe su **llave de
+  `npx @dotrino/content enroll` (pega el QR). El node recibe su **llave de
   dispositivo `D` + cert** encadenado a la maestra (`D ← maestra`). No necesita
   correr en la máquina del vault (puede ser un VPS/NAS).
 - **Confianza:** cada extremo verifica que el `cert` del otro **encadena a la

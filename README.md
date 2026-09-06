@@ -15,15 +15,24 @@ autohospedado por el usuario. Diseño completo en
 
 ## Uso
 
+> **El paquete se llama `@dotrino/content` desde la 0.3.13.** Hasta la 0.3.12 se publicó
+> como `dotrino-content`, fuera del scope, y era el único del ecosistema así — el resto de
+> los daemons (`@dotrino/vaultd`, `@dotrino/sealers`, `@dotrino/terminal-agent`,
+> `@dotrino/tunnel`) siempre lo llevaron. No había ninguna razón detrás: nació así y nadie
+> lo revisó. **El comando no cambia**, sigue siendo `dotrino-content`; lo que cambia es lo
+> que se instala. Quien lo tenga puesto por el nombre viejo, reinstálelo:
+> `npm i -g @dotrino/content`.
+
+
 ```sh
 # una vez: enlazar este node a tu bóveda (saca el código de `dotrino-vault pair`)
-npx dotrino-content enroll <código>
+npx @dotrino/content enroll <código>
 
-npx dotrino-content start [--port 3777] [--dir ~/.dotrino-content] \
+npx @dotrino/content start [--port 3777] [--dir ~/.dotrino-content] \
   [--max-gb 50] [--max-blob-mb 512] [--gc-min 60] [--no-agent]
 
 # con vistas previas públicas (ver más abajo antes de encenderlo)
-npx dotrino-content start --public --public-port 3778 --public-egress-gb 5 \
+npx @dotrino/content start --public --public-port 3778 --public-egress-gb 5 \
   --public-url https://content.tudominio.com
 ```
 
