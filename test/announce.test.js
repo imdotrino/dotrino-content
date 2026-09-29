@@ -141,3 +141,21 @@ test('un proxy sin canales no tumba el node: el anuncio es best-effort', async (
   assert.deepEqual(beacon.channels(), [], 'no se anunció, pero el node sigue vivo')
   beacon.close()
 })
+
+test('si un proxio no deja anunciarse (se está reiniciando), se reintenta enseguida y no a los 4 min', async () => {
+  const proxy = makeProxy()
+  const client = proxy.client()
+  // El proxio 2 contesta «sin enlace» las dos primeras veces: su malla aún no está lista.
+  const publish = client.publish.bind(client)
+  let fallos = 2
+  client.publish = async (name, data) => {
+    if (name.startsWith(proxy.nodes[1]) && fallos > 0) { fallos--; throw new Error('no link to the channel owner node') }
+    return publish(name, data)
+  }
+  const beacon = startAnnounce({ client, owner: OWNER, quiet: true, retryMs: 20 })
+  await tick()
+  assert.equal(beacon.channels().length, 1, 'al principio solo en uno')
+  await new Promise((r) => setTimeout(r, 120))
+  assert.deepEqual(beacon.channels(), proxy.nodes.map((n) => channelFor(n, OWNER)), 'y en cuanto se puede, en los dos')
+  beacon.close()
+})

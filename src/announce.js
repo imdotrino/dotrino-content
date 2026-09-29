@@ -39,23 +39,40 @@ export { channelFor }
 export const REPUBLISH_MS = 4 * 60 * 1000
 
 /**
+ * Cada cuánto se reintenta un anuncio que falló. No se espera al tic de 4 min: el fallo
+ * típico es un proxio recién reiniciado (cada despliegue lo hace) cuya malla con el otro
+ * aún no está lista, y eso se arregla en segundos. Mientras tanto quien esté conectado a
+ * ese proxio no encuentra el node.
+ */
+export const RETRY_MS = 30 * 1000
+
+/**
+ * Cuántos reintentos seguidos se aguantan en silencio antes de llamarlo error (~2 min).
+ * Un proxio que se está reiniciando no es un fallo y no debe salir en el log de errores;
+ * uno que lleva dos minutos sin dejar anunciarse, sí.
+ */
+export const FAILURES_BEFORE_ERROR = 4
+
+/**
  * Publica este node en el canal de su dueño, en todos los proxios conocidos, y lo
  * mantiene publicado. Best-effort a propósito: si el proxy está caído, el node
  * sigue funcionando —sirve en local y atiende a los aparatos del acta— y el
  * siguiente tic lo vuelve a intentar. Un anuncio perdido no rompe nada; lo único
  * que pasa es que un tercero no lo encuentra hasta que vuelva.
  *
- * @param {{ client: any, owner: string, quiet?: boolean, intervalMs?: number }} opts
+ * @param {{ client: any, owner: string, quiet?: boolean, intervalMs?: number, retryMs?: number }} opts
  *   client: el `WebSocketProxyClient` YA conectado del agente (`ra.client`) — no se
  *   abre otro: dos conexiones del mismo aparato son dos identidades de transporte.
  * @returns {{ channels: () => string[], close: () => void }}
  */
-export function startAnnounce ({ client, owner, quiet = false, intervalMs = REPUBLISH_MS }) {
+export function startAnnounce ({ client, owner, quiet = false, intervalMs = REPUBLISH_MS, retryMs = RETRY_MS }) {
   if (!client) throw new Error('startAnnounce: client is required')
   if (!owner) throw new Error('startAnnounce: owner is required')
 
   let stopped = false
   let current = []
+  let retry = null
+  const failures = new Map()   // canal → fallos seguidos
 
   /** Los proxios donde hay que anunciarse: el que nos atiende y los que conoce. */
   const targets = () => {
@@ -72,9 +89,22 @@ export function startAnnounce ({ client, owner, quiet = false, intervalMs = REPU
       try {
         await client.publish(name, { app: 'content', owner })
         done.push(name)
+        const antes = failures.get(name) || 0
+        failures.delete(name)
+        if (antes >= FAILURES_BEFORE_ERROR && !quiet) console.log(`[content] announce on ${name} works again`)
       } catch (e) {
-        if (!quiet) console.error(`[content] could not announce on ${name}: ${e.message}`)
+        const n = (failures.get(name) || 0) + 1
+        failures.set(name, n)
+        if (quiet) continue
+        // Primer fallo: casi siempre un proxio que se acaba de reiniciar. Se dice sin alarma.
+        if (n === 1) console.log(`[content] announce on ${name} failed (${e.message}); retrying every ${retryMs / 1000} s`)
+        // Si sigue, ya no es un reinicio: error, una sola vez hasta que se recupere.
+        else if (n === FAILURES_BEFORE_ERROR) console.error(`[content] still cannot announce on ${name} after ${Math.round(n * retryMs / 60000)} min: ${e.message}`)
       }
+    }
+    if (failures.size && !retry && !stopped) {
+      retry = setTimeout(() => { retry = null; publishAll() }, retryMs)
+      retry.unref?.()
     }
     // Se avisa cuando CAMBIA en cuántos proxios está anunciado, no solo la primera vez.
     // Antes solo hablaba al pasar de 0 a algo, así que un arranque que solo alcanzó uno de
@@ -98,6 +128,7 @@ export function startAnnounce ({ client, owner, quiet = false, intervalMs = REPU
     close () {
       stopped = true
       clearInterval(timer)
+      if (retry) { clearTimeout(retry); retry = null }
       try { offToken?.() } catch (_) {}
       for (const name of current) { try { client.unpublish(name) } catch (_) {} }
       current = []
