@@ -26,9 +26,14 @@ import { ContentNode } from '../src/node.js'
 import { createServer } from '../src/server.js'
 import { createPublicServer, DEFAULT_PUBLIC_PORT, DEFAULT_MAX_BYTES, DEFAULT_RATE_PER_MIN } from '../src/public.js'
 import { isLinked, linkDir, startContentAgent } from '../src/agent.js'
+import { createRequire } from 'node:module'
+
+const { version: VERSION } = createRequire(import.meta.url)('../package.json')
 
 const USAGE = `uso:
   dotrino-content enroll <código>
+  dotrino-content info [--json]     qué aparato es este node: su ID (el de «dotrino-vault members»),
+                                    su bóveda y sus permisos. Sin red.
   dotrino-content start [--port 3777] [--dir <ruta>] [--max-gb <n>] [--max-blob-mb <n>] [--gc-min <min>] [--no-agent]
                         [--public] [--public-port 3778] [--public-host 0.0.0.0] [--public-max-kb 512]
                         [--public-rate 60] [--public-egress-gb <n>] [--public-url https://…] [--app-url https://…]
@@ -53,6 +58,7 @@ const { values, positionals } = parseArgs({
     'public-url': { type: 'string' },
     'app-url': { type: 'string' },
     'public-index': { type: 'boolean' },
+    json: { type: 'boolean' },
     help: { type: 'boolean', short: 'h' }
   }
 })
@@ -63,9 +69,22 @@ if (values.help) {
 }
 
 const cmd = positionals[0] || 'start'
-if (cmd !== 'start' && cmd !== 'enroll') {
+if (cmd !== 'start' && cmd !== 'enroll' && cmd !== 'info') {
   console.error(`comando desconocido: ${cmd}\n${USAGE}`)
   process.exit(1)
+}
+
+// `info`: la pieza común de todos los comandos (CONVENCIONES §15.1). Lo que se viene a
+// mirar es el ID, para buscarlo en el acta.
+if (cmd === 'info') {
+  const { loadLink } = await import('@dotrino/remote-agent/link')
+  const { deviceInfo, formatDeviceInfo } = await import('@dotrino/vault/device-info')
+  const dir = linkDir()
+  const link = loadLink(dir)
+  if (!link) { console.error(`este node no está enlazado (${dir}): dotrino-content enroll <código>`); process.exit(1) }
+  const info = await deviceInfo(link, { kind: 'content', ns: 'content', version: VERSION, dir })
+  console.log(values.json ? JSON.stringify(info, null, 2) : formatDeviceInfo(info))
+  process.exit(0)
 }
 
 /**
@@ -149,8 +168,15 @@ node.gc()
 // propia ACL, su límite por IP y su techo de salida: no se activa por descuido.
 server.listen(port, '127.0.0.1', () => {
   const s = node.stats()
-  console.log(`dotrino-content en http://127.0.0.1:${port}  ·  datos: ${dir}`)
+  console.log(`dotrino-content ${VERSION} en http://127.0.0.1:${port}  ·  datos: ${dir}`)
   console.log(`blobs: ${s.blobs}  ·  bytes: ${s.bytes}${maxBytes ? ` / ${maxBytes}` : ''}`)
+})
+
+// §15: una vez al día mira si hay versión nueva y lo dice en el log. Solo avisa.
+const { watchForUpdate } = await import('@dotrino/update')
+watchForUpdate({
+  current: VERSION, source: 'npm', pkg: '@dotrino/content',
+  onNewer: (r) => console.log(`[content] version ${r.version} is available (running ${r.current}): npm i -g @dotrino/content@${r.version}`)
 })
 
 // Plano de control: solo si este node ya está enlazado a un vault. Sin enlace sigue
@@ -161,7 +187,7 @@ if (values['no-agent']) {
   console.log('plano de control: apagado (--no-agent)')
 } else if (isLinked()) {
   try {
-    agent = await startContentAgent({ node })
+    agent = await startContentAgent({ node, version: VERSION })
   } catch (e) {
     console.error(`plano de control: no arrancó (${e.message})`)
   }
