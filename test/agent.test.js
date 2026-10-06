@@ -19,6 +19,7 @@ import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { Readable } from 'node:stream'
 import { makeDeviceKey, signDelegationWith, signWithDevice } from '@dotrino/identity/capabilities'
+import { genesisActa, applyChanges, sealActa } from '@dotrino/identity/acta'
 import { HS, ACK, DATA, ERROR, VMSG, SIGN_SCOPE, makeEphemeral, deriveKey, seal, open } from '@dotrino/remote-agent'
 import { ContentNode } from '../src/node.js'
 import { startContentAgent } from '../src/agent.js'
@@ -32,20 +33,20 @@ async function makeMaster () {
   )
   const publickey = JSON.stringify(await crypto.subtle.exportKey('jwk', pair.publicKey))
   let n = 0
-  // ACTA mínima: el papel ya no vence por reloj, lleva el `seq` del acta con el que se
-  // emitió, y quien verifica necesita saber quién puede sellar en este perfil.
-  const acta = {
-    v: 5, profileId: publickey, sealedBy: publickey, seq: 1,
-    members: [{ pub: publickey, caps: ['sign', 'read', 'store', 'sealer'] }],
-    renounced: []
-  }
+  // EL ACTA, SELLADA COMO LA DE VERDAD: el papel lleva el `seq` del acta con el que se
+  // emitió, y el agente solo adopta un acta que puede comprobar (remote-agent ≥ 0.13) —
+  // firmada por la bóveda del enlace. Un doble que mandara una sin firmar probaría otra cosa.
+  const sellar = (a) => sealActa({ acta: a, privateKey: pair.privateKey })
+  let acta = await sellar(genesisActa({ pub: publickey, label: 'vault' }))
   const certFor = async (sub, scope = [SIGN_SCOPE], { admitir = true } = {}) => {
-    if (admitir && !acta.members.some((m) => m.pub === sub)) acta.members.push({ pub: sub, caps: ['sign'] })
+    if (admitir && !acta.members.some((m) => m.pub === sub)) {
+      acta = await sellar(await applyChanges(acta, [{ op: 'admit', member: { pub: sub, label: 'device', caps: ['sign'] } }], { by: publickey }))
+    }
     return signDelegationWith(pair.privateKey, publickey, {
       sub, scope, iat: Date.now() - 1000, seq: acta.seq, nonce: 'n' + (++n)
     })
   }
-  return { publickey, certFor, acta }
+  return { publickey, certFor, get acta () { return acta } }
 }
 
 /**
