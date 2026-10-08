@@ -3,8 +3,8 @@
  *
  * No implementa nada de eso: mirar, comprobar lo que entrega npm contra la release de
  * GitHub, instalar y recordar lo ya preguntado es de `@dotrino/update/npm`; preguntarle a
- * la bóveda y avisarle es de `@dotrino/vault/service`. Aquí solo está el pegamento, y es
- * lo único que conoce las dos piezas a la vez.
+ * la bóveda y avisarle es de `@dotrino/vault/service` (`vaultUpdateHooks`). Aquí solo se
+ * juntan las dos piezas con la carpeta y la identidad de esta instancia.
  *
  * Los dos ajustes son de ESTA instancia (`update-prefs.json` en su carpeta) y no tienen
  * que ver con el de la bóveda:
@@ -17,35 +17,10 @@
  * `no-approver` y no se instala. Suponer un sí sería saltarse lo que el dueño pidió.
  */
 import { watchSelfUpdateNpm } from '@dotrino/update/npm'
-import { askUpdateApproval, reportUpdated, reportUpdateNeedsRoot } from '@dotrino/vault/service'
+import { vaultUpdateHooks } from '@dotrino/vault/service'
 
 export const PKG = '@dotrino/content'
 export const REPO = 'imdotrino/dotrino-content'
-
-/**
- * Los tres ganchos que hablan con la bóveda. `conn()` da, EN EL MOMENTO de llamar, con
- * qué identidad se le habla (`{ dir }` o `{ proxyUrl, masterPubkey, device, cert }`): el
- * papel se renueva con el proceso en marcha y uno leído al arrancar ya no valdría.
- *
- * @param {{ product: string, conn: () => object, vault?: any }} o
- */
-export function vaultUpdateHooks ({ product, conn, vault = { askUpdateApproval, reportUpdated, reportUpdateNeedsRoot } }) {
-  return {
-    // true = sí · false = no, o pasó el día sin respuesta · lanza = no se pudo preguntar
-    // (eso no es una negativa: `@dotrino/update` lo reintenta en la próxima pasada).
-    mayUpdate: async ({ version, from }) => {
-      try {
-        return (await vault.askUpdateApproval({ product, version, from, ...conn() })).ok === true
-      } catch (e) {
-        // El pedido quedó pendiente y venció sin que nadie contestara: vencido es no.
-        if (e?.code === 'unanswered') return false
-        throw e
-      }
-    },
-    onUpdated: ({ version, from }) => vault.reportUpdated({ product, version, from, ...conn() }),
-    onNeedsRoot: ({ version, from }) => vault.reportUpdateNeedsRoot({ product, version, from, ...conn() })
-  }
-}
 
 /**
  * Arranca el vigilante. Devuelve cómo pararlo.
@@ -53,19 +28,30 @@ export function vaultUpdateHooks ({ product, conn, vault = { askUpdateApproval, 
  * @param {{
  *   version: string, dir: string, conn?: (() => object) | null,
  *   restart: (version: string) => void, log?: (m: string) => void,
- *   watch?: typeof watchSelfUpdateNpm, vault?: any
+ *   watch?: typeof watchSelfUpdateNpm, hooks?: typeof vaultUpdateHooks
  * }} o
  *   dir: la carpeta del enlace de esta instancia (ahí viven sus ajustes de actualización).
- *   conn: cómo hablarle a la bóveda, o `null` si este node no está enrolado.
+ *   conn: con qué identidad se le habla a la bóveda (`{ dir }` o `{ proxyUrl, masterPubkey,
+ *     device, cert }`), o `null` si este node no está enrolado. Es una FUNCIÓN y se llama en
+ *     cada uso: el papel se renueva con el proceso en marcha, y uno leído al arrancar ya no
+ *     valdría un día después.
  *   restart: salir limpio para que systemd/pm2 levante la versión nueva.
  */
-export function startSelfUpdate ({ version, dir, conn = null, restart, log = console.log, watch = watchSelfUpdateNpm, vault }) {
+export function startSelfUpdate ({ version, dir, conn = null, restart, log = console.log, watch = watchSelfUpdateNpm, hooks = vaultUpdateHooks }) {
+  // Los ganchos son de la librería de la bóveda; aquí solo se arman con la identidad de AHORA.
+  const now = () => hooks({ product: PKG, log, ...conn() })
   return watch({
     pkg: PKG,
     current: version,
     repo: REPO,
     dir,
-    ...(conn ? vaultUpdateHooks({ product: PKG, conn, ...(vault ? { vault } : {}) }) : {}),
+    ...(conn
+      ? {
+          mayUpdate: (u) => now().mayUpdate(u),
+          onUpdated: (u) => now().onUpdated(u),
+          onNeedsRoot: (u) => now().onNeedsRoot(u)
+        }
+      : {}),
     onInstalled: ({ version: to, restart: canRestart }) => {
       if (canRestart) {
         log(`[update] ${PKG} ${to} installed · restarting to run it`)
@@ -78,4 +64,4 @@ export function startSelfUpdate ({ version, dir, conn = null, restart, log = con
   })
 }
 
-export default { PKG, REPO, vaultUpdateHooks, startSelfUpdate }
+export default { PKG, REPO, startSelfUpdate }

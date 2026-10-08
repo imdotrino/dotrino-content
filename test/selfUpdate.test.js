@@ -12,7 +12,7 @@ import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { spawnSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
-import { startSelfUpdate, vaultUpdateHooks, PKG, REPO } from '../src/selfUpdate.js'
+import { startSelfUpdate, PKG, REPO } from '../src/selfUpdate.js'
 
 const CLI = fileURLToPath(new URL('../bin/cli.js', import.meta.url))
 
@@ -54,39 +54,29 @@ test('solo se reinicia si hay quien lo levante', () => {
   assert.deepEqual(restarts, ['1.3.0'])
 })
 
-test('preguntar: sí, no, vencido es no, y «no pude preguntar» se lanza', async () => {
-  const calls = []
-  let answer = async () => ({ ok: true, asked: true })
-  const vault = {
-    askUpdateApproval: (o) => { calls.push(o); return answer() },
-    reportUpdated: async (o) => { calls.push({ done: o }); return { ok: true } },
-    reportUpdateNeedsRoot: async (o) => { calls.push({ root: o }); return { ok: true } }
+test('los ganchos son los de la bóveda, armados con la identidad de AHORA', async () => {
+  const { seen, watch } = fakeWatch()
+  const built = []
+  // El doble de `vaultUpdateHooks`: se queda con lo que le pasan cada vez que se arma.
+  const hooks = (o) => {
+    built.push(o)
+    return {
+      mayUpdate: async (u) => ({ ask: u, cert: o.cert }),
+      onUpdated: async (u) => ({ done: u, cert: o.cert }),
+      onNeedsRoot: async (u) => ({ root: u, cert: o.cert })
+    }
   }
-  // La identidad se lee AL LLAMAR: el papel se renueva con el proceso en marcha.
+  // El papel se renueva con el proceso en marcha: lo que cuenta es el de cada llamada.
   let cert = 'viejo'
-  const h = vaultUpdateHooks({ product: PKG, conn: () => ({ dir: '/svc', cert }), vault })
+  const log = () => {}
+  startSelfUpdate({ version: '1.0.0', dir: '/d', conn: () => ({ dir: '/svc', cert }), restart () {}, log, watch, hooks })
+  const u = { version: '2.0.0', from: '1.0.0' }
 
-  assert.equal(await h.mayUpdate({ version: '2.0.0', from: '1.0.0' }), true)
-  assert.deepEqual(calls[0], { product: PKG, version: '2.0.0', from: '1.0.0', dir: '/svc', cert: 'viejo' })
+  assert.deepEqual(await seen.opts.mayUpdate(u), { ask: u, cert: 'viejo' })
+  assert.deepEqual(built[0], { product: PKG, log, dir: '/svc', cert: 'viejo' })
   cert = 'renovado'
-  answer = async () => ({ ok: false, asked: true })
-  assert.equal(await h.mayUpdate({ version: '2.0.0', from: '1.0.0' }), false)
-  assert.equal(calls[1].cert, 'renovado')
-
-  answer = async () => { throw Object.assign(new Error('nobody answered'), { code: 'unanswered' }) }
-  assert.equal(await h.mayUpdate({ version: '2.0.0', from: '1.0.0' }), false, 'vencido es no')
-
-  answer = async () => { throw Object.assign(new Error('the vault did not answer'), { code: 'vault-no-reply' }) }
-  await assert.rejects(() => h.mayUpdate({ version: '2.0.0', from: '1.0.0' }), (e) => e.code === 'vault-no-reply', 'no poder preguntar NO es una negativa')
-
-  // Una respuesta que no dice que sí no es un sí.
-  answer = async () => ({ asked: false })
-  assert.equal(await h.mayUpdate({ version: '2.0.0', from: '1.0.0' }), false)
-
-  await h.onUpdated({ version: '2.0.0', from: '1.0.0' })
-  await h.onNeedsRoot({ version: '2.0.0', from: '1.0.0' })
-  assert.deepEqual(calls.at(-2), { done: { product: PKG, version: '2.0.0', from: '1.0.0', dir: '/svc', cert: 'renovado' } })
-  assert.deepEqual(calls.at(-1), { root: { product: PKG, version: '2.0.0', from: '1.0.0', dir: '/svc', cert: 'renovado' } })
+  assert.deepEqual(await seen.opts.onUpdated(u), { done: u, cert: 'renovado' })
+  assert.deepEqual(await seen.opts.onNeedsRoot(u), { root: u, cert: 'renovado' })
 })
 
 test('CLI: `update` guarda los dos ajustes en la carpeta de la instancia y los enseña', async () => {
