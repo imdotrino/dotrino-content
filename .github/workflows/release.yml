@@ -56,11 +56,27 @@ jobs:
         with:
           subject-path: 'sbom-*.cdx.json'
 
+      # LO QUE SE PUBLICA ES LO QUE SE MIDE, byte a byte: se empaqueta UNA vez, se mide ese
+      # .tgz y se publica ESE archivo. La medida (`npm-integrity.json`) va adjunta a la
+      # release `v<versión>` de este repo, y es contra lo que cada instalación comprueba lo
+      # que le da npm antes de actualizarse sola (`@dotrino/update/npm`, CONVENCIONES §15).
+      # Dos canales: el archivo viene de npm, su hash viene de aquí. Sin ella, esta versión
+      # no se instala sola en ninguna máquina.
+      - name: Empaquetar
+        run: npm pack
+
+      - name: Medir lo que se va a publicar
+        run: |
+          npx --yes @dotrino/update@latest integrity ./*.tgz > npm-integrity.json
+          cat npm-integrity.json
+
       # La procedencia sale sola: npm la genera y la firma, sin `--provenance`.
-      - name: Publicar en npm
-        run: npm publish --access public
+      - name: Publicar en npm ESE archivo
+        run: npm publish ./*.tgz --access public
 
       - uses: softprops/action-gh-release@v2
         with:
-          files: 'sbom-*.cdx.json'
+          files: |
+            sbom-*.cdx.json
+            npm-integrity.json
           generate_release_notes: true

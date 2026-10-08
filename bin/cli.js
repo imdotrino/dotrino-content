@@ -3,6 +3,8 @@
  * CLI de dotrino-content.
  *
  *   dotrino-content enroll <código>     enlaza este node a tu vault (una vez)
+ *   dotrino-content update [--approval on|off] [--notify on|off]
+ *                                       cómo se actualiza este node (CONVENCIONES §15)
  *   dotrino-content start [--port 3777] [--dir <ruta>] [--max-gb <n>] [--gc-min <min>]
  *                         [--no-agent]  arranca sin el plano de control
  *                         [--public]    abre el puerto de VISTAS PREVIAS (§7.2)
@@ -34,10 +36,25 @@ const USAGE = `uso:
   dotrino-content enroll <código>
   dotrino-content info [--json]     qué aparato es este node: su ID (el de «dotrino-vault members»),
                                     su bóveda y sus permisos. Sin red.
+  dotrino-content update [--approval on|off] [--notify on|off]
+                                    este node se actualiza solo. --approval on: antes pide permiso a
+                                    quien aprueba en tu bóveda. --notify off: no avisa de que se
+                                    actualizó. Sin opciones, dice cómo está.
   dotrino-content start [--port 3777] [--dir <ruta>] [--max-gb <n>] [--max-blob-mb <n>] [--gc-min <min>] [--no-agent]
                         [--public] [--public-port 3778] [--public-host 0.0.0.0] [--public-max-kb 512]
                         [--public-rate 60] [--public-egress-gb <n>] [--public-url https://…] [--app-url https://…]
                         [--public-index]`
+
+// `update`: los dos ajustes de actualización de ESTA instancia (CONVENCIONES §15). Va antes
+// de `parseArgs` porque `--approval` y `--notify` se pueden dar sin valor (para preguntar
+// cómo están), y `parseArgs` no admite una opción que a veces lleva valor y a veces no.
+if (process.argv[2] === 'update') {
+  const { updatePrefsCommand } = await import('@dotrino/update/npm')
+  const r = updatePrefsCommand(process.argv.slice(3), { dir: linkDir(), lang: 'es' })
+  if (!r.handled) { console.error(`uso: dotrino-content update [--approval on|off] [--notify on|off]`); process.exit(2) }
+  ;(r.ok ? console.log : console.error)(r.text)
+  process.exit(r.ok ? 0 : 2)
+}
 
 const { values, positionals } = parseArgs({
   allowPositionals: true,
@@ -84,6 +101,13 @@ if (cmd === 'info') {
   if (!link) { console.error(`este node no está enlazado (${dir}): dotrino-content enroll <código>`); process.exit(1) }
   const info = await deviceInfo(link, { kind: 'content', ns: 'content', version: VERSION, dir })
   console.log(values.json ? JSON.stringify(info, null, 2) : formatDeviceInfo(info))
+  // Y si hay una actualización que no se instaló (no se aprobó, o necesita root), se dice
+  // aquí: es donde se mira qué es este aparato. Fuera del JSON, que lo lee una máquina.
+  if (!values.json) {
+    const { updateStatusText } = await import('@dotrino/update/npm')
+    const estado = updateStatusText({ dir, current: VERSION, lang: 'es' })
+    if (estado) console.log('\n' + estado)
+  }
   process.exit(0)
 }
 
@@ -172,13 +196,6 @@ server.listen(port, '127.0.0.1', () => {
   console.log(`blobs: ${s.blobs}  ·  bytes: ${s.bytes}${maxBytes ? ` / ${maxBytes}` : ''}`)
 })
 
-// §15: una vez al día mira si hay versión nueva y lo dice en el log. Solo avisa.
-const { watchForUpdate } = await import('@dotrino/update')
-watchForUpdate({
-  current: VERSION, source: 'npm', pkg: '@dotrino/content',
-  onNewer: (r) => console.log(`[content] version ${r.version} is available (running ${r.current}): npm i -g @dotrino/content@${r.version}`)
-})
-
 // Plano de control: solo si este node ya está enlazado a un vault. Sin enlace sigue
 // siendo lo de antes (un node local), y se dice en voz alta para que nadie crea que
 // tiene administración remota cuando no la tiene.
@@ -226,11 +243,29 @@ if (values.public) {
   })
 }
 
+/** @type {null | (() => void)} */
+let stopSelfUpdate = null
 const shutdown = () => {
   clearInterval(gcTimer)
+  try { stopSelfUpdate?.() } catch (_) {}
   try { agent?.close() } catch (_) {}
   try { publicServer?.close() } catch (_) {}
   server.close(() => { node.close(); process.exit(0) })
 }
 process.on('SIGINT', shutdown)
 process.on('SIGTERM', shutdown)
+
+// §15: SE ACTUALIZA SOLO. Mira al arrancar y una vez al día; lo que baja se comprueba
+// contra la release de GitHub antes de tocar el disco, y solo se reinicia si hay quien lo
+// levante. Los dos ajustes (`dotrino-content update`) son de esta instancia. Va al final
+// porque reiniciar es `shutdown`. Desde un checkout (el node de Dotrino, que se despliega
+// con git) no se toca nada: lo dice una vez y sigue.
+const { startSelfUpdate } = await import('../src/selfUpdate.js')
+const { serviceDir } = await import('../src/vaultEnv.js')
+stopSelfUpdate = startSelfUpdate({
+  version: VERSION,
+  dir: linkDir(),
+  conn: isEnrolled() ? () => ({ dir: serviceDir() }) : null,
+  restart: shutdown,
+  log
+})
