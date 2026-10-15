@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-<meta name="theme-color" content="#0b1520">
+<meta name="theme-color" content="#00658c">
 <link rel="icon" type="image/svg+xml" href="icon.svg">
 <title>Content — comparte fotos y videos desde tu propia computadora | Dotrino</title>
 <meta name="description" content="Guarda y comparte fotos, videos y archivos pesados desde tu propia computadora, sin subirlos a la nube de nadie. Tus enlaces, tus reglas: cifrado, sin anuncios y sin rastreo. En desarrollo." />
@@ -38,34 +38,27 @@
   "publisher": { "@type": "Organization", "name": "Dotrino", "url": "https://dotrino.com/" }
 }
 </script>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@dotrino/theme@0.1/src/theme.css">
 <style>
   :root {
-    --ac: #4fe3c1;
-    --bg: #0b1520;
-    --panel: #10202b;
-    --ink: #e8f4f0;
-    --muted: #93b3ab;
-    --line: #1e3a41;
-    --code-bg: #081018;
+    /* Colores del ecosistema (@dotrino/theme, CONVENCIONES §5). */
+    --ac: var(--dt-accent);
+    --bg: var(--dt-bg);
+    --panel: var(--dt-surface);
+    --ink: var(--dt-text);
+    --muted: var(--dt-text-dim);
+    --line: var(--dt-line-soft);
+    --code-bg: var(--dt-surface-2);
   }
   * { box-sizing: border-box; }
   html, body { margin: 0; padding: 0; }
   body {
     background: var(--bg); color: var(--ink);
-    font: 16px/1.6 system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+    font: 16px/1.6 var(--dt-font);
     -webkit-text-size-adjust: 100%;
   }
   a { color: var(--ac); }
   .wrap { max-width: 820px; margin: 0 auto; padding: 24px 20px 96px; }
-  /* La barra la trae <dotrino-topbar> (§5): layout, fila móvil y safe-area son
-     suyos. Aquí solo se le pasa la paleta de esta página. */
-  dotrino-topbar {
-    --dotrino-topbar-bg: rgba(16, 32, 43, .85);
-    --dotrino-topbar-border: #1e3a41;
-    --dotrino-topbar-text: #e8f4f0;
-    --dotrino-topbar-muted: #93b3ab;
-    --dotrino-topbar-accent: var(--ac);
-  }
 
   .hero { text-align: center; padding: 32px 0 8px; }
   .logo { width: 88px; height: 88px; border-radius: 22px; }
@@ -86,7 +79,7 @@
     padding: 14px 16px; overflow-x: auto; font-size: 14px;
   }
   pre code { background: none; padding: 0; }
-  .cta { display: inline-block; margin: 6px 8px 6px 0; padding: 10px 18px; border-radius: 10px; background: var(--ac); color: #06231c; text-decoration: none; font-weight: 600; }
+  .cta { display: inline-block; margin: 6px 8px 6px 0; padding: 10px 18px; border-radius: 10px; background: var(--ac); color: var(--dt-accent-ink); text-decoration: none; font-weight: 600; }
   .cta.ghost { background: none; border: 1px solid var(--line); color: var(--ink); }
   footer { text-align: center; color: var(--muted); font-size: 14px; margin-top: 48px; }
   [data-lang="en"] { display: none; }
@@ -95,7 +88,7 @@
 </style>
 </head>
 <body>
-<dotrino-topbar profile
+<dotrino-topbar profile theme
   brand="Content"
   icon="icon.svg"
   no-back
@@ -169,7 +162,7 @@ node bin/cli.js start --port 3777 --max-gb 50</code></pre>
   </footer>
 </div>
 
-<script type="module" src="https://cdn.jsdelivr.net/npm/@dotrino/topbar@0.12/+esm"></script>
+<script type="module" src="https://cdn.jsdelivr.net/npm/@dotrino/topbar@0.16/+esm"></script>
 <script>
   // El idioma lo lleva <dotrino-topbar>: persiste la preferencia y pone
   // document.documentElement.lang, que es de lo que cuelgan los bloques
