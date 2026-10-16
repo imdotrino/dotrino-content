@@ -96,6 +96,7 @@ test('list, stats, pin/unpin, delete y 404', async () => {
   assert.ok(list.some(b => b.cid === cid))
   const stats = await (await fetch(`${base}/stats`)).json()
   assert.ok(stats.blobs >= 1 && stats.bytes > 0)
+  assert.ok('owner' in stats, 'stats dice de qué cuenta es el node')
 
   assert.equal((await fetch(`${base}/pin/${cid}`, { method: 'POST' })).status, 200)
   assert.equal(node.stat(cid).pinned, 1)

@@ -136,7 +136,7 @@ HEAD   /c/<cid>            size/mime/etag sin cuerpo
 DELETE /c/<cid>            borrar
 GET    /list               índice de blobs
 POST   /pin/<cid>          retención (excluye del GC)     POST /unpin/<cid>
-GET    /stats              nº de blobs, bytes usados, cuota
+GET    /stats              nº de blobs, bytes usados, cuota y `owner` (la cuenta del node)
 ```
 
 - `cid = sha256-<hex>` (prefijo de algoritmo → extensible a BLAKE3 después; se
@@ -154,6 +154,15 @@ GET    /stats              nº de blobs, bytes usados, cuota
   `ownerId + cid`). El `acl` nace privado: lo que no se marca `public` a mano no sale
   del node cuando llegue el modo público, y un blob cifrado no puede marcarse
   público (nadie sin la llave podría leerlo).
+
+## Mensajes en tránsito del proxio
+
+El proxio del ecosistema guarda la cola de los mensajes que esperan a un destinatario
+desconectado (24 h) en el node de **su propia cuenta**, por este HTTP local
+(`websocket-proxy` ≥ 1.5.0, variable `PROXY_CONTENT_URL`). Antes de usarlo comprueba que
+el `owner` de `/stats` es la cuenta a la que él mismo está enrolado. Cada mensaje sube
+**ya sellado** por quien lo mandó (`enc=1`, con su `ttl`), así que el node solo ve bytes
+cifrados; se borra al entregarse y, si nadie lo recoge, lo recolecta el GC al vencer.
 
 ## `@dotrino/content-client` (lo que usa una app)
 

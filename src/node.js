@@ -208,7 +208,11 @@ export class ContentNode {
       totalBytes: this.index.totalBytes(),
       maxBytes: this.maxBytes || null,
       backed: this.store.backed === true,
-      dir: this.dir
+      dir: this.dir,
+      // De QUÉ CUENTA es este node (null sin enlazar). Lo lee quien guarda aquí por el
+      // HTTP local —el proxio, que deja sus mensajes en tránsito— para comprobar que es el
+      // node de su propia cuenta y no uno cualquiera que escucha en ese puerto.
+      owner: this.owner || null
     }
   }
 
