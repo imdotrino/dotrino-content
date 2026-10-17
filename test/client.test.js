@@ -183,3 +183,14 @@ test('matchesCid es la comprobación que hace verificable el direccionado por ha
   assert.equal(await matchesCid(bytes, cid), true)
   assert.equal(await matchesCid(new TextEncoder().encode('holA'), cid), false)
 })
+
+test('connectWithIdentity sin bóveda enlazada lanza no-vault (la app sigue sin node)', async () => {
+  const id = { vaultStatus: async () => ({ paired: false }), getVaultCert: async () => null }
+  await assert.rejects(ContentClient.connectWithIdentity(id), (e) => e.code === 'no-vault')
+})
+
+test('cidOf (./cid) es el mismo cid que comprueba matchesCid', async () => {
+  const { cidOf } = await import('../lib/cid.js')
+  const bytes = new TextEncoder().encode('hola')
+  assert.equal(await matchesCid(bytes, await cidOf(bytes)), true)
+})

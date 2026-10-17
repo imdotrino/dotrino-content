@@ -80,3 +80,17 @@ jobs:
             sbom-*.cdx.json
             npm-integrity.json
           generate_release_notes: true
+
+      # EL CLIENTE de las apps (`lib/`, @dotrino/content-client) sale en la misma tanda, y solo
+      # si su versión no está ya en npm. Antes se publicaba a mano. Necesita la publicación de
+      # confianza declarada en npmjs.com para @dotrino/content-client (repo
+      # imdotrino/dotrino-content, release.yml); sin eso npm contesta 404.
+      - name: Publicar @dotrino/content-client (lib/) si es nuevo
+        working-directory: lib
+        run: |
+          V=$(node -p "require('./package.json').version")
+          if npm view "@dotrino/content-client@$V" version >/dev/null 2>&1; then
+            echo "@dotrino/content-client@$V ya está publicada: nada que hacer"
+          else
+            npm publish --access public
+          fi
