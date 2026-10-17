@@ -72,9 +72,18 @@ jobs:
 
       # La procedencia sale sola: npm la genera y la firma, sin `--provenance`.
       - name: Publicar en npm ESE archivo
-        run: npm publish ./*.tgz --access public
+        run: |
+          V=$(node -p "require('./package.json').version")
+          if npm view "@dotrino/content@$V" version >/dev/null 2>&1; then
+            echo "@dotrino/content@$V ya está publicada: nada que hacer"
+          else
+            npm publish ./*.tgz --access public
+          fi
 
-      - uses: softprops/action-gh-release@v2
+      # Solo con tag: lanzado a mano no hay release a la que colgar nada (y colgaría lo de
+      # esta versión de la última que hubiera).
+      - if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
         with:
           files: |
             sbom-*.cdx.json
