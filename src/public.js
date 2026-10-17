@@ -45,6 +45,7 @@ import http from 'node:http'
 import { open as openFile } from 'node:fs/promises'
 import { pipeline } from 'node:stream/promises'
 import { isValidCid } from './node.js'
+import { parseRange } from './range.js'
 
 export const DEFAULT_PUBLIC_PORT = 3778
 /** Tope por blob: lo que hace que esto sirva previsualizaciones y no originales. */
@@ -268,7 +269,7 @@ export function createPublicServer (node, opts = {}) {
 
   const server = http.createServer(async (req, res) => {
     try {
-      if (!limiter.allow(clientIp(req))) return text(res, 429, 'demasiadas peticiones\n', { 'retry-after': '60' })
+      if (!limiter.allow(clientIp(req))) return text(res, 429, 'too many requests\n', { 'retry-after': '60' })
       await route(req, res)
     } catch (err) {
       if (res.headersSent) { res.destroy(); return }
@@ -278,7 +279,7 @@ export function createPublicServer (node, opts = {}) {
   })
 
   async function route (req, res) {
-    if (req.method !== 'GET' && req.method !== 'HEAD') return text(res, 405, 'método no permitido\n')
+    if (req.method !== 'GET' && req.method !== 'HEAD') return text(res, 405, 'method not allowed\n')
     const url = new URL(req.url, 'http://localhost')
     const [, top, cid] = url.pathname.split('/')
 
@@ -291,10 +292,10 @@ export function createPublicServer (node, opts = {}) {
     }
 
     if ((top === 'c' || top === 'p') && cid) {
-      if (!isValidCid(cid)) return text(res, 400, 'cid inválido\n')
+      if (!isValidCid(cid)) return text(res, 400, 'invalid cid\n')
       // 404 y no 403 para lo privado: un 403 confirmaría que ese cid existe aquí.
       const row = node.publicStat(cid)
-      if (!row) return text(res, 404, 'no disponible\n')
+      if (!row) return text(res, 404, 'not available\n')
 
       if (top === 'p') {
         const body = previewHtml({
@@ -313,10 +314,10 @@ export function createPublicServer (node, opts = {}) {
       // --- bytes ---
       // El tipo REAL, sacado del archivo. `row.mime` no decide nada aquí.
       const kind = await sniffImage(node.store, cid, { public: true })
-      if (!kind) return text(res, 404, 'no disponible\n')
+      if (!kind) return text(res, 404, 'not available\n')
       if (maxBytes && row.size > maxBytes) {
         // No es un error del que pide: es la política del node. Se dice cuál es.
-        return text(res, 413, 'este node solo publica vistas previas; el contenido se abre en la app\n')
+        return text(res, 413, 'this node only publishes previews; the content opens in the app\n')
       }
       const headers = {
         'content-type': kind,
@@ -331,14 +332,14 @@ export function createPublicServer (node, opts = {}) {
       }
       if (req.headers['if-none-match'] === `"${cid}"`) return res.writeHead(304, headers).end()
 
-      const range = parseRangeHeader(req.headers.range, row.size)
+      const range = parseRange(req.headers.range, row.size)
       if (range === false) return res.writeHead(416, { 'content-range': `bytes */${row.size}` }).end()
       const sending = range ? range.end - range.start + 1 : row.size
       // El techo se mira contra lo que ESTA respuesta va a mandar, no contra cero:
       // dejar entrar una petición porque "aún quedan 10 bytes" es rebasarlo igual,
       // solo que fingiendo que no. Un HEAD no manda cuerpo, así que no gasta.
       if (req.method === 'GET' && egressLeft() < sending) {
-        return text(res, 503, 'techo de salida diario alcanzado\n', { 'retry-after': '3600' })
+        return text(res, 503, 'daily egress cap reached\n', { 'retry-after': '3600' })
       }
       if (range) {
         headers['content-range'] = `bytes ${range.start}-${range.end}/${row.size}`
@@ -359,7 +360,7 @@ export function createPublicServer (node, opts = {}) {
       return
     }
 
-    return text(res, 404, 'no disponible\n')
+    return text(res, 404, 'not available\n')
   }
 
   /**
@@ -378,23 +379,6 @@ export function createPublicServer (node, opts = {}) {
   }
 
   return server
-}
-
-/** Igual que el del servidor local; duplicado mínimo para no acoplar los dos. */
-function parseRangeHeader (header, size) {
-  if (!header) return null
-  const m = /^bytes=(\d*)-(\d*)$/.exec(String(header).trim())
-  if (!m || (m[1] === '' && m[2] === '')) return false
-  let start, end
-  if (m[1] === '') {
-    const n = Number(m[2])
-    if (n === 0) return false
-    start = Math.max(0, size - n); end = size - 1
-  } else {
-    start = Number(m[1]); end = m[2] === '' ? size - 1 : Math.min(Number(m[2]), size - 1)
-  }
-  if (start >= size || start > end) return false
-  return { start, end }
 }
 
 export default { createPublicServer, RateLimiter, previewHtml, utcDay, DEFAULT_PUBLIC_PORT, DEFAULT_MAX_BYTES }
