@@ -194,3 +194,16 @@ test('cidOf (./cid) es el mismo cid que comprueba matchesCid', async () => {
   const bytes = new TextEncoder().encode('hola')
   assert.equal(await matchesCid(bytes, await cidOf(bytes)), true)
 })
+
+test('nodeSession: sin bóveda no hay node, lo intenta una vez y retry vuelve a intentarlo', async () => {
+  const { nodeSession } = await import('../lib/session.js')
+  let asks = 0
+  const s = nodeSession(async () => { asks++; return { vaultStatus: async () => ({ paired: false }) } })
+  assert.equal(await s.node(), null)
+  assert.equal(await s.node(), null)
+  assert.equal(asks, 1)
+  assert.equal(s.lastError(), 'no-vault')
+  assert.equal(s.hasNode(), false)
+  await s.retry()
+  assert.equal(asks, 2)
+})
