@@ -237,8 +237,8 @@ test('la tarjeta guarda los ENLACES del contenido, y solo http(s)', async () => 
       'solo http(s), en orden, y como mucho cuatro')
 
     // Sin enlaces válidos, el campo no existe (no un array vacío que hay que comprobar).
-    const solos = await ops({ rid: 2, op: 'meta', cid: res.cid, meta: { title: 'x', links: ['javascript:alert(1)'] } })
-    assert.equal(solos.meta.links, undefined)
+    const alone = await ops({ rid: 2, op: 'meta', cid: res.cid, meta: { title: 'x', links: ['javascript:alert(1)'] } })
+    assert.equal(alone.meta.links, undefined)
   })
 })
 
@@ -257,17 +257,17 @@ test('hello dice cuánto entra por aquí, para que el cliente no lo adivine', as
 
 test('meta y thumb: la tarjeta se puede poner después, y una miniatura ajena no cuela', async () => {
   await withNode(async (node, ops) => {
-    const foto = await ops({ rid: 1, op: 'put', data: Buffer.from('foto').toString('base64'), mime: 'image/png' })
-    const mini = await ops({ rid: 2, op: 'put', data: Buffer.from('mini').toString('base64'), mime: 'image/webp' })
+    const photo = await ops({ rid: 1, op: 'put', data: Buffer.from('foto').toString('base64'), mime: 'image/png' })
+    const thumb = await ops({ rid: 2, op: 'put', data: Buffer.from('mini').toString('base64'), mime: 'image/webp' })
 
-    assert.equal((await ops({ rid: 3, op: 'meta', cid: foto.cid, meta: { name: 'x.png' } })).meta.name, 'x.png')
-    assert.equal((await ops({ rid: 4, op: 'meta', cid: foto.cid, meta: null })).meta, null)
+    assert.equal((await ops({ rid: 3, op: 'meta', cid: photo.cid, meta: { name: 'x.png' } })).meta.name, 'x.png')
+    assert.equal((await ops({ rid: 4, op: 'meta', cid: photo.cid, meta: null })).meta, null)
 
-    assert.equal((await ops({ rid: 5, op: 'thumb', cid: foto.cid, thumbnailCid: mini.cid })).thumbnailCid, mini.cid)
-    assert.equal(node.stat(foto.cid).thumbnailCid, mini.cid)
+    assert.equal((await ops({ rid: 5, op: 'thumb', cid: photo.cid, thumbnailCid: thumb.cid })).thumbnailCid, thumb.cid)
+    assert.equal(node.stat(photo.cid).thumbnailCid, thumb.cid)
     // Una miniatura que este node no tiene no se puede enlazar: sería una tarjeta rota.
-    const ajena = 'sha256-' + '0'.repeat(64)
-    assert.equal((await ops({ rid: 6, op: 'thumb', cid: foto.cid, thumbnailCid: ajena })).code, 'not-found')
-    assert.equal((await ops({ rid: 7, op: 'thumb', cid: foto.cid, thumbnailCid: 'no-es-un-cid' })).code, 'bad-request')
+    const foreign = 'sha256-' + '0'.repeat(64)
+    assert.equal((await ops({ rid: 6, op: 'thumb', cid: photo.cid, thumbnailCid: foreign })).code, 'not-found')
+    assert.equal((await ops({ rid: 7, op: 'thumb', cid: photo.cid, thumbnailCid: 'no-es-un-cid' })).code, 'bad-request')
   })
 })

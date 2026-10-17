@@ -36,11 +36,11 @@ async function makeMaster () {
   // EL ACTA, SELLADA COMO LA DE VERDAD: el papel lleva el `seq` del acta con el que se
   // emitió, y el agente solo adopta un acta que puede comprobar (remote-agent ≥ 0.13) —
   // firmada por la bóveda del enlace. Un doble que mandara una sin firmar probaría otra cosa.
-  const sellar = (a) => sealActa({ acta: a, privateKey: pair.privateKey })
-  let acta = await sellar(genesisActa({ pub: publickey, label: 'vault' }))
+  const sealIt = (a) => sealActa({ acta: a, privateKey: pair.privateKey })
+  let acta = await sealIt(genesisActa({ pub: publickey, label: 'vault' }))
   const certFor = async (sub, scope = [SIGN_SCOPE], { admitir = true } = {}) => {
     if (admitir && !acta.members.some((m) => m.pub === sub)) {
-      acta = await sellar(await applyChanges(acta, [{ op: 'admit', member: { pub: sub, label: 'device', caps: ['sign'] } }], { by: publickey }))
+      acta = await sealIt(await applyChanges(acta, [{ op: 'admit', member: { pub: sub, label: 'device', caps: ['sign'] } }], { by: publickey }))
     }
     return signDelegationWith(pair.privateKey, publickey, {
       sub, scope, iat: Date.now() - 1000, seq: acta.seq, nonce: 'n' + (++n)
@@ -117,7 +117,7 @@ async function connectClient (bus, { device, cert, agentPubkey, token = 'client-
       if (p?.type === ACK) done(resolve, p)
       else if (p?.type === ERROR) done(reject, new Error(p.error))
     })
-    const t = setTimeout(() => done(reject, new Error('timeout esperando el ack')), 5000)
+    const t = setTimeout(() => done(reject, new Error('timeout waiting for the ack')), 5000)
   })
   ep.sendByPubkey(agentPubkey, { type: HS, data, signature, cert })
 
@@ -236,11 +236,11 @@ test('a un aparato que el acta ya no nombra no se le abre sesión', async () => 
   try {
     // Se le emite el papel pero NO entra en el acta. El papel está bien firmado y no vence;
     // lo único que le falta es que el acta lo nombre, y eso basta para que no pase.
-    const fuera = await makeDeviceKey({ label: 'sin sitio en el acta' })
-    const cert = await s.master.certFor(fuera.publickey, [SIGN_SCOPE], { admitir: false })
+    const outsider = await makeDeviceKey({ label: 'sin sitio en el acta' })
+    const cert = await s.master.certFor(outsider.publickey, [SIGN_SCOPE], { admitir: false })
     await assert.rejects(
       connectClient(s.bus, {
-        device: fuera, cert, agentPubkey: s.agent.machine, token: 'stale-token'
+        device: outsider, cert, agentPubkey: s.agent.machine, token: 'stale-token'
       }),
       /no autorizado/i
     )

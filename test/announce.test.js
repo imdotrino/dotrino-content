@@ -126,7 +126,7 @@ test('un proxio que no contesta no invalida al otro', async () => {
   const visitor = proxy.client(proxy.nodes[1])
   const realList = visitor.list.bind(visitor)
   visitor.list = async (name) => {
-    if (name.startsWith(proxy.nodes[0])) throw new Error('ese proxio está caído')
+    if (name.startsWith(proxy.nodes[0])) throw new Error('that proxy is down')
     return realList(name)
   }
   assert.deepEqual(await findNodes({ client: visitor, owner: OWNER }), [node.token])
@@ -135,7 +135,7 @@ test('un proxio que no contesta no invalida al otro', async () => {
 
 test('un proxy sin canales no tumba el node: el anuncio es best-effort', async () => {
   const roto = { token: 'T0', node: 'NODEUNO12345', knownNodes: ['NODEUNO12345'], on: () => () => {},
-    publish: async () => { throw new Error('sin canales') } }
+    publish: async () => { throw new Error('no channels') } }
   const beacon = startAnnounce({ client: roto, owner: OWNER, quiet: true })
   await tick()
   assert.deepEqual(beacon.channels(), [], 'no se anunció, pero el node sigue vivo')

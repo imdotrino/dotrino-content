@@ -105,8 +105,8 @@ if (cmd === 'info') {
   // aquí: es donde se mira qué es este aparato. Fuera del JSON, que lo lee una máquina.
   if (!values.json) {
     const { updateStatusText } = await import('@dotrino/update/npm')
-    const estado = updateStatusText({ dir, current: VERSION, lang: 'es' })
-    if (estado) console.log('\n' + estado)
+    const status = updateStatusText({ dir, current: VERSION, lang: 'es' })
+    if (status) console.log('\n' + status)
   }
   process.exit(0)
 }
@@ -169,7 +169,7 @@ const gcMin = Number(values['gc-min'] || 60)
 const { startVaultConfig, isEnrolled } = await import('../src/vaultEnv.js')
 const log = (m) => console.log(m)
 const vaultConfig = startVaultConfig({ log })
-if (!isEnrolled()) console.log('sin vault: configuración local (enrola con: dotrino-content enroll <código>)')
+if (!isEnrolled()) console.log('no vault: local config (enroll with: dotrino-content enroll <code>)')
 // Se ESPERA a la configuración antes de montar el almacén, porque de ella sale cuál es
 // (§15.14). Con plazo: si la bóveda no contesta, se arranca con el disco y ya se
 // reiniciará cuando llegue — un node no puede quedarse sin servir por eso.
@@ -180,7 +180,7 @@ const { store, cfg } = await openStore({ dir, log })
 
 const node = await new ContentNode({ dir, maxBytes, maxBlobBytes, store, log, publicBase: cfg?.pub ? cfg.baseUrl : null }).init()
 // Lo que quedó sin subir en un arranque anterior. Se lanza y no se espera.
-node.backupPending().then(({ pending }) => { if (pending) log(`[almacén] ${pending} pendiente(s) de subir al bucket`) })
+node.backupPending().then(({ pending }) => { if (pending) log(`[store] ${pending} pending upload(s) to the bucket`) })
 const server = createServer(node)
 
 // GC periódico de vencidos (ttl); el GC por cuota corre inline en cada put.
@@ -192,7 +192,7 @@ node.gc()
 // propia ACL, su límite por IP y su techo de salida: no se activa por descuido.
 server.listen(port, '127.0.0.1', () => {
   const s = node.stats()
-  console.log(`dotrino-content ${VERSION} en http://127.0.0.1:${port}  ·  datos: ${dir}`)
+  console.log(`dotrino-content ${VERSION} on http://127.0.0.1:${port}  ·  data: ${dir}`)
   console.log(`blobs: ${s.blobs}  ·  bytes: ${s.bytes}${maxBytes ? ` / ${maxBytes}` : ''}`)
 })
 
@@ -201,15 +201,15 @@ server.listen(port, '127.0.0.1', () => {
 // tiene administración remota cuando no la tiene.
 let agent = null
 if (values['no-agent']) {
-  console.log('plano de control: apagado (--no-agent)')
+  console.log('control plane: off (--no-agent)')
 } else if (isLinked()) {
   try {
     agent = await startContentAgent({ node, version: VERSION })
   } catch (e) {
-    console.error(`plano de control: no arrancó (${e.message})`)
+    console.error(`control plane: did not start (${e.message})`)
   }
 } else {
-  console.log('plano de control: sin enlace (corre `dotrino-content enroll <código>` para administrarlo desde tus apps)')
+  console.log('control plane: not linked (run `dotrino-content enroll <code>` to manage it from your apps)')
 }
 
 // Modo público (§7.2). Va DESPUÉS del agente a propósito: el `owner` del node lo
@@ -231,14 +231,14 @@ if (values.public) {
     owner: node.owner
   })
   publicServer.listen(publicPort, publicHost, () => {
-    console.log(`vistas previas públicas en http://${publicHost}:${publicPort}  ·  solo imágenes` +
-      `${maxKb ? ` de hasta ${maxKb} KB` : ' (SIN tope de tamaño)'}` +
-      `${egressGb ? `  ·  techo de salida ${egressGb} GB/día` : ''}`)
+    console.log(`public previews on http://${publicHost}:${publicPort}  ·  images only` +
+      `${maxKb ? ` up to ${maxKb} KB` : ' (NO size cap)'}` +
+      `${egressGb ? `  ·  egress cap ${egressGb} GB/day` : ''}`)
     if (!node.owner) {
-      console.log('  ojo: este node no está enlazado a un vault, así que las tarjetas salen sin enlace "Abrir"')
+      console.log('  note: this node is not linked to a vault, so the cards come out without an "Open" link')
     }
     if (!maxKb) {
-      console.log('  ojo: sin tope de tamaño esto sirve originales, no vistas previas — y el ancho de banda lo pagas tú')
+      console.log('  note: with no size cap this serves originals, not previews — and you pay for the bandwidth')
     }
   })
 }

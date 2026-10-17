@@ -107,7 +107,7 @@ test('el camino público se comprueba subiendo y leyendo, no mirando el error', 
     : answers(403)())
   const bad = await checkBuckets(cfg, { priv: fakeBucket, pub }, notConnected)
   assert.equal(bad.ok, true, 'no es fatal: lo privado sigue funcionando')
-  assert.match(bad.warn.join(), /no sirve lo que hay en/)
+  assert.match(bad.warn.join(), /does not serve what is in/)
   assert.equal(uploaded.length, 1, 'y la sonda se subió una sola vez')
   assert.match(uploaded[0], /^sha256-[0-9a-f]{64}$/, 'con su hash por nombre: repetirla no ensucia el bucket')
 
@@ -120,7 +120,7 @@ test('el camino público se comprueba subiendo y leyendo, no mirando el error', 
 
 test('si no se puede comprobar, se avisa pero no se bloquea', async () => {
   const cfg = storageConfig({ CONTENT_STORAGE: 'r2', ...CREDS })
-  const r = await checkBuckets(cfg, { priv: fakeBucket, pub: null }, async () => { throw new Error('sin red') })
+  const r = await checkBuckets(cfg, { priv: fakeBucket, pub: null }, async () => { throw new Error('no network') })
   assert.equal(r.ok, true, 'quedarse sin almacén porque el nodo no tiene red sería peor')
-  assert.match(r.warn.join(), /sin red/)
+  assert.match(r.warn.join(), /no network/)
 })

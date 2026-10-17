@@ -101,7 +101,7 @@ export async function checkBuckets (cfg, { priv, pub }, f = fetch) {
       fatal.push(`the private bucket "${cfg.priv}" answers without credentials (HTTP ${r.status}): it is open to the world`)
     }
   } catch (e) {
-    warn.push(`no se pudo comprobar si el bucket privado está cerrado: ${e.message}`)
+    warn.push(`could not check whether the private bucket is closed: ${e.message}`)
   }
 
   // 3. El dominio del público tiene que servir DE VERDAD, y eso no se deduce mirando
@@ -122,10 +122,10 @@ export async function checkBuckets (cfg, { priv, pub }, f = fetch) {
       const r = await f(`${cfg.baseUrl.replace(/\/+$/, '')}/${cid}`, { method: 'GET' })
       const body = r.ok ? (await r.text()).trim() : ''
       if (body !== PROBE) {
-        warn.push(`${cfg.baseUrl} no sirve lo que hay en «${cfg.pub}» (HTTP ${r.status}): revisa que el dominio esté conectado AL BUCKET desde el panel`)
+        warn.push(`${cfg.baseUrl} does not serve what is in "${cfg.pub}" (HTTP ${r.status}): check that the domain is connected TO THE BUCKET in the dashboard`)
       }
     } catch (e) {
-      warn.push(`no se pudo comprobar el camino público: ${e.message}`)
+      warn.push(`could not check the public path: ${e.message}`)
     }
   }
 

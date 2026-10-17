@@ -59,8 +59,8 @@ test('parseRef lee un fragmento y sabe decir "esto no es mío"', () => {
   assert.deepEqual(parseRef(`#O/${cid}/K`), { owner: 'O', cid, key: 'K' })
   assert.deepEqual(parseRef(`https://eco.dotrino.com/#O/${cid}`), { owner: 'O', cid, key: null })
   // Las apps usan el fragmento para muchas cosas: hay que poder decir que no sin ruido.
-  for (const otro of ['#room=abc', '#vault', '', 'O/no-es-un-cid', `#O/${cid}/K/de-más`]) {
-    assert.equal(parseRef(otro), null, `no debería parsear: ${otro}`)
+  for (const other of ['#room=abc', '#vault', '', 'O/no-es-un-cid', `#O/${cid}/K/de-más`]) {
+    assert.equal(parseRef(other), null, `no debería parsear: ${other}`)
   }
 })
 
@@ -112,10 +112,10 @@ test('cifrado y público a la vez se rechaza EN EL CLIENTE, antes de gastar la s
 test('unos bytes que no cuadran con el cid se rechazan, venga quien los mande', async () => {
   await withClient(async (cc) => {
     const ref = await cc.put('lo bueno', { encrypt: false })
-    const otro = await cc.put('lo cambiado', { encrypt: false })
+    const other = await cc.put('lo cambiado', { encrypt: false })
     // Pedimos un cid pero el node contesta con los bytes del otro: el hash lo caza.
     const real = cc._ask.bind(cc)
-    cc._ask = async (msg) => real(msg.op === 'get' ? { ...msg, cid: otro.cid } : msg)
+    cc._ask = async (msg) => real(msg.op === 'get' ? { ...msg, cid: other.cid } : msg)
     await assert.rejects(() => cc.get({ ...ref, key: null }), (e) => e.code === 'corrupt')
   })
 })
@@ -152,15 +152,15 @@ test('una referencia de OTRO dueño no se pide a mi node', async () => {
 
 test('la tarjeta se compone desde el cliente: acl, meta y miniatura enlazada', async () => {
   await withClient(async (cc, node) => {
-    const foto = await cc.put('unos bytes de foto', { mime: 'image/png', encrypt: false })
-    const mini = await cc.put('la miniatura', { mime: 'image/webp', encrypt: false, acl: 'public' })
-    await cc.setMeta(foto.cid, { title: 'Mi foto' })
-    await cc.setThumbnail(foto.cid, mini.cid)
-    await cc.setAcl(foto.cid, 'public')
+    const photo = await cc.put('unos bytes de foto', { mime: 'image/png', encrypt: false })
+    const thumb = await cc.put('la miniatura', { mime: 'image/webp', encrypt: false, acl: 'public' })
+    await cc.setMeta(photo.cid, { title: 'Mi foto' })
+    await cc.setThumbnail(photo.cid, thumb.cid)
+    await cc.setAcl(photo.cid, 'public')
 
-    const row = node.stat(foto.cid)
+    const row = node.stat(photo.cid)
     assert.equal(row.acl, 'public')
-    assert.equal(row.thumbnailCid, mini.cid)
+    assert.equal(row.thumbnailCid, thumb.cid)
     assert.equal(JSON.parse(row.meta).title, 'Mi foto')
   })
 })

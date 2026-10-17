@@ -14,7 +14,7 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { signRequest, uriEncode, amzDate } from '../src/s3.js'
 
-const firma = (auth) => /Signature=([0-9a-f]+)/.exec(auth)[1]
+const sigOf = (auth) => /Signature=([0-9a-f]+)/.exec(auth)[1]
 
 const SUITE = { accessKeyId: 'AKIDEXAMPLE', secretAccessKey: 'wJalrXUtnFEMI/K7MDENG+bPxRfiCYEXAMPLEKEY' }
 const S3DOC = { accessKeyId: 'AKIAIOSFODNN7EXAMPLE', secretAccessKey: 'wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY' }
@@ -28,7 +28,7 @@ test('get-vanilla, el vector base de la suite de AWS', () => {
     now: new Date('2015-08-30T12:36:00Z'),
     ...SUITE
   })
-  assert.equal(firma(h.authorization),
+  assert.equal(sigOf(h.authorization),
     '5fa00fa31553b73ebf1942676e86291e8372ff2a2260956d9b8aae1d763fbf31')
   assert.match(h.authorization, /Credential=AKIDEXAMPLE\/20150830\/us-east-1\/service\/aws4_request/)
 })
@@ -42,7 +42,7 @@ test('GET de un objeto con Range (ejemplo de la documentación de S3)', () => {
     now: new Date('2013-05-24T00:00:00Z'),
     ...S3DOC
   })
-  assert.equal(firma(h.authorization),
+  assert.equal(sigOf(h.authorization),
     'f0e8bdb87c964420e857bd35b5d6ed310bd44f0170aba48dd91039c6036bdb41')
   // La petición canónica, tal cual la publica AWS: si esto se tuerce, la firma
   // también, y es donde se ve por qué.
@@ -70,7 +70,7 @@ test('PUT de un objeto: el hash del cuerpo entra en la firma', () => {
     now: new Date('2013-05-24T00:00:00Z'),
     ...S3DOC
   })
-  assert.equal(firma(h.authorization),
+  assert.equal(sigOf(h.authorization),
     '98ad721746da40c64f1a55b78f14c238d841ea1380cd77a1b5971af0ece108bd')
   assert.equal(h._canonicalRequest.split('\n')[1], '/test%24file.text', 'el `$` va escapado en la ruta')
 })
@@ -83,7 +83,7 @@ test('la query se ordena y se escapa antes de firmar', () => {
     now: new Date('2013-05-24T00:00:00Z'),
     ...S3DOC
   })
-  assert.equal(firma(h.authorization),
+  assert.equal(sigOf(h.authorization),
     '34b48302e7b5fa45bde8084f4b7868a86f0a534bc59db6670ed5711ef69dc6f7')
 })
 
