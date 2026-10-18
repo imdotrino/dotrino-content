@@ -220,7 +220,7 @@ test('un aparato de OTRA maestra no abre sesión: el node no le contesta nada', 
         agentPubkey: s.agent.machine,
         token: 'intruder-token'
       }),
-      /no autorizado|untrusted/i
+      /unauthorized|untrusted/i
     )
   } finally { await s.cleanup() }
 })
@@ -242,7 +242,7 @@ test('a un aparato que el acta ya no nombra no se le abre sesión', async () => 
       connectClient(s.bus, {
         device: outsider, cert, agentPubkey: s.agent.machine, token: 'stale-token'
       }),
-      /no autorizado/i
+      /unauthorized/i
     )
   } finally { await s.cleanup() }
 })
