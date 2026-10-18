@@ -3,13 +3,14 @@
 // lib/cid.js y el node de proxy1 no arrancaba (ERR_MODULE_NOT_FOUND).
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { execFileSync } from 'node:child_process'
-import { readFileSync } from 'node:fs'
+import { readFileSync, readdirSync, statSync } from 'node:fs'
 import { dirname, join, normalize } from 'node:path'
 
 test('every relative import of a published file is published too', () => {
-  const [pack] = JSON.parse(execFileSync('npm', ['pack', '--dry-run', '--json', '--ignore-scripts'], { encoding: 'utf8' }))
-  const files = new Set(pack.files.map((f) => normalize(f.path)))
+  // La lista sale de `files` del package.json (lo que decide qué entra), sin llamar a npm.
+  const walk = (p) => statSync(p).isDirectory() ? readdirSync(p).flatMap((n) => walk(join(p, n))) : [normalize(p)]
+  const { files: listed } = JSON.parse(readFileSync('package.json', 'utf8'))
+  const files = new Set(listed.flatMap(walk))
   const missing = []
   for (const f of files) {
     if (!/\.(m?js)$/.test(f)) continue
