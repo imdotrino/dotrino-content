@@ -30,7 +30,7 @@
  * el sitio de siempre.
  */
 
-import { channelFor } from '../lib/public.js'
+import { channelFor, findNodes } from '../lib/public.js'
 
 /** Nombre del canal de un dueño dentro de un proxio concreto (vive en la lib: el cliente del tercero lo necesita igual). */
 export { channelFor }
@@ -147,23 +147,8 @@ export function startAnnounce ({ client, owner, quiet = false, intervalMs = REPU
  * `cid` pedido. Con esas dos, un impostor en la lista no consigue nada más que
  * gastar un intento.
  *
- * @param {{ client: any, owner: string }} opts
- * @returns {Promise<string[]>} tokens (direcciones en el proxy)
+ * Vive en la lib (`lib/public.js`): el cliente del tercero la necesita igual.
  */
-export async function findNodes ({ client, owner }) {
-  if (!client || !owner) throw new Error('findNodes: client and owner are required')
-  const known = Array.isArray(client.knownNodes) && client.knownNodes.length
-    ? client.knownNodes
-    : (client.node ? [client.node] : [])
-  const out = new Set()
-  for (const nodeId of known) {
-    try {
-      for (const token of await client.list(channelFor(nodeId, owner))) out.add(token)
-    } catch (_) { /* un proxio que no contesta no invalida al otro */ }
-  }
-  // El propio que pregunta puede estar en la lista (una PWA que también es node).
-  if (client.token) out.delete(client.token)
-  return [...out]
-}
+export { findNodes }
 
 export default { startAnnounce, findNodes, channelFor, REPUBLISH_MS }
