@@ -14,12 +14,9 @@ import { mkdir, open, rename, rm, stat } from 'node:fs/promises'
 import { pipeline } from 'node:stream/promises'
 import { Transform } from 'node:stream'
 import path from 'node:path'
-
-const CID_RE = /^sha256-[0-9a-f]{64}$/
-
-export function isValidCid (cid) {
-  return typeof cid === 'string' && CID_RE.test(cid)
-}
+// La forma del cid se define UNA vez, en lib/ref.js (lo comparte con content-client).
+import { isValidCid } from '../lib/ref.js'
+export { isValidCid }
 
 export class BlobStore {
   /** @param {string} root directorio raíz de datos (contiene blobs/ y tmp/) */
