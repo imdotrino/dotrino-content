@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex">
+<title>Content · Dotrino</title>
+<link rel="icon" href="data:,">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@dotrino/theme@0.1/src/theme.css">
+<style>
+  body { margin: 0; background: var(--dt-bg, #f7f9fb); color: var(--dt-text, #1b1c1e); font-family: var(--dt-font, Quicksand, system-ui, sans-serif); }
+  main { max-width: 860px; margin: 0 auto; padding: 16px; }
+  #player { position: sticky; top: 0; z-index: 2; background: var(--dt-surface, #fff); border-radius: 16px; padding: 12px 16px; margin-bottom: 16px; box-shadow: 0 2px 8px #0002; }
+  #player[hidden] { display: none; }
+  #now { font-weight: 700; margin-bottom: 8px; overflow-wrap: anywhere; }
+  audio { width: 100%; }
+  .row { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center; background: var(--dt-surface, #fff); border-radius: 16px; padding: 12px 16px; margin-bottom: 8px; }
+  .row.on { outline: 2px solid var(--dt-primary, #00658c); }
+  .info { flex: 1 1 260px; min-width: 0; }
+  .name { font-weight: 700; overflow-wrap: anywhere; }
+  .sub { font-size: 14px; opacity: .75; }
+  .acts { display: flex; flex-wrap: wrap; gap: 6px; }
+  button, a.btn { font: inherit; font-size: 14px; font-weight: 600; cursor: pointer; border: 1px solid var(--dt-primary, #00658c); color: var(--dt-primary, #00658c); background: none; border-radius: 999px; padding: 6px 14px; text-decoration: none; }
+  button.main { background: var(--dt-primary, #00658c); color: var(--dt-on-primary, #fff); }
+  button.danger { border-color: #ba1a1a; color: #ba1a1a; }
+  #msg { padding: 10px 14px; border-radius: 12px; background: #ffdad6; color: #410002; margin-bottom: 12px; }
+  #msg[hidden] { display: none; }
+  #empty { opacity: .75; text-align: center; padding: 40px 0; }
+</style>
+</head>
+<body>
+<dotrino-topbar profile theme brand="Content" no-back support-repo="imdotrino/dotrino-content" support-discord="https://discord.gg/D648uq7cth"></dotrino-topbar>
+<main>
+  <div id="msg" role="alert" data-testid="message" hidden></div>
+  <section id="player" data-testid="player" hidden>
+    <div id="now"></div>
+    <audio id="audio" controls data-testid="audio"></audio>
+  </section>
+  <div id="list" data-testid="library"></div>
+  <p id="empty" data-testid="empty" hidden></p>
+</main>
+<script type="module" src="https://cdn.jsdelivr.net/npm/@dotrino/topbar@0.16/+esm"></script>
+<script type="module" src="/app.js"></script>
+</body>
+</html>

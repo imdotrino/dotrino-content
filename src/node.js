@@ -50,7 +50,7 @@ export class ContentNode {
    * Sube un stream. Si la cuota no alcanza, intenta GC de no-pineados; si aun
    * así no cabe, rechaza con code ENOSPC (no borra pineados jamás).
    */
-  async put (readable, { mime = 'application/octet-stream', enc = 0, ttl = null, acl = null, meta = null } = {}) {
+  async put (readable, { mime = 'application/octet-stream', enc = 0, ttl = null, acl = null, meta = null, tag = null } = {}) {
     const { cid, size, existed } = await this.store.put(readable, {
       maxBytes: this.maxBlobBytes || undefined
     })
@@ -64,7 +64,7 @@ export class ContentNode {
         throw Object.assign(new Error('disk quota exceeded'), { code: 'ENOSPC' })
       }
     }
-    this.index.upsert({ cid, size, mime, owner: this.owner, enc, acl, ttl, meta })
+    this.index.upsert({ cid, size, mime, owner: this.owner, enc, acl, ttl, meta, tag })
     // Con bucket detrás, la subida va DESPUÉS de responder: quien sube no espera a la
     // red. Hasta que el bucket confirme, este blob no es desalojable (§15.11).
     if (!existed) this.backup(cid, { size, mime, public: acl === 'public' })
@@ -190,8 +190,8 @@ export class ContentNode {
     this.index.remove(cid)
   }
 
-  list () {
-    return this.index.list()
+  list (tag = null) {
+    return this.index.list(tag)
   }
 
   pin (cid, pinned = true) {

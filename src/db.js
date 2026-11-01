@@ -56,29 +56,34 @@ export class Index {
     ]) {
       try { this.db.exec(`ALTER TABLE blobs ADD COLUMN ${col}`) } catch (_) { /* ya existía */ }
     }
+    // `tag`: de qué colección de una app es el blob, para que otro aparato la encuentre sin
+    // abrir todo lo que hay (las fichas de la biblioteca, por ejemplo).
+    try { this.db.exec('ALTER TABLE blobs ADD COLUMN tag TEXT') } catch (_) { /* ya existía */ }
+    this.db.exec('CREATE INDEX IF NOT EXISTS idx_blobs_tag ON blobs (tag) WHERE tag IS NOT NULL')
     this.db.exec('CREATE INDEX IF NOT EXISTS idx_blobs_evict ON blobs (pinned, cached, remote, lastRead)')
   }
 
-  upsert ({ cid, size, mime, owner = null, enc = 0, acl = null, ttl = null, meta = null }) {
+  upsert ({ cid, size, mime, owner = null, enc = 0, acl = null, ttl = null, meta = null, tag = null }) {
     this.db.prepare(`
-      INSERT INTO blobs (cid, size, mime, createdAt, owner, enc, acl, ttl, meta)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO blobs (cid, size, mime, createdAt, owner, enc, acl, ttl, meta, tag)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT (cid) DO UPDATE SET
         mime = excluded.mime,
         ttl  = excluded.ttl,
         -- Volver a subir los mismos bytes NO borra la presentación que ya tenían.
-        meta = COALESCE(excluded.meta, blobs.meta)
-    `).run(cid, size, mime, Date.now(), owner, enc ? 1 : 0, acl, ttl, meta ? JSON.stringify(meta) : null)
+        meta = COALESCE(excluded.meta, blobs.meta),
+        tag  = COALESCE(excluded.tag, blobs.tag)
+    `).run(cid, size, mime, Date.now(), owner, enc ? 1 : 0, acl, ttl, meta ? JSON.stringify(meta) : null, tag)
   }
 
   get (cid) {
     return this.db.prepare('SELECT * FROM blobs WHERE cid = ?').get(cid) ?? null
   }
 
-  list () {
-    return this.db.prepare(
-      'SELECT cid, size, mime, createdAt, owner, enc, acl, ttl, pinned, meta FROM blobs ORDER BY createdAt DESC'
-    ).all()
+  list (tag = null) {
+    const cols = 'cid, size, mime, createdAt, owner, enc, acl, ttl, pinned, meta, tag'
+    if (tag) return this.db.prepare(`SELECT ${cols} FROM blobs WHERE tag = ? ORDER BY createdAt DESC`).all(tag)
+    return this.db.prepare(`SELECT ${cols} FROM blobs ORDER BY createdAt DESC`).all()
   }
 
   /**

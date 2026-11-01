@@ -11,13 +11,13 @@
  * eso no es una limitación técnica que haya que levantar después — es la frontera
  * (§7.1). El plano de control es el proxy del ecosistema: sus tramas son de 1 MB y
  * su cola es de mensajes, no un almacén, y meter contenido por ahí sería usar la
- * infraestructura de Dotrino como transporte, que es la regla dura 3. Por eso NO
- * hay subida por partes: si algo no cabe en un mensaje, es que no es un mensaje.
+ * infraestructura de Dotrino como transporte, que es la regla dura 3.
+ *
+ * ARCHIVOS GRANDES: `up.begin` / `up.part` / `up.end` (ver `uploads.js`). Por WebRTC directo,
+ * sin tope. Por TURN o proxio, solo si son de la cuenta y no de Dotrino (`lib/network.js`).
  *
  * Lo que sí es un mensaje y por eso pasa: **un post** (un eco pesa cientos de
- * bytes) y **una miniatura** (decenas de KB). Los originales suben en local por
- * HTTP y, entre aparatos, por P2P — que es lo que este tope deja pendiente a
- * propósito en vez de disimularlo con un troceado.
+ * bytes) y **una miniatura** (decenas de KB).
  *
  * El contrato de errores es `code`, no la frase: quien recibe compara `code`
  * (`bad-request`, `not-found`, `unknown-op`, `failed`), que es lo estable. La frase
@@ -36,7 +36,10 @@ export const ACL = Object.freeze({ PUBLIC: 'public', PRIVATE: 'private' })
 export const CONTROL_PLANE_MAX_BYTES = 256 * 1024
 
 import { Readable } from 'node:stream'
+import { RELAY_MAX_BYTES } from '@dotrino/proxy-client'
+import { isDotrinoNetwork } from '../lib/network.js'
 import { isValidCid } from './blobstore.js'
+import { Uploads } from './uploads.js'
 
 const ok = (rid, result) => ({ rid, ok: true, ...result })
 const fail = (rid, code, error) => ({ rid, ok: false, code, error })
@@ -72,12 +75,13 @@ function cleanMeta (src) {
  * Construye el despachador de operaciones de un node.
  *
  * @param {import('./node.js').ContentNode} node
- * @param {{ owner?: string|null, version?: string }} [meta]
+ * @param {{ owner?: string|null, version?: string, proxyUrl?: string|null }} [meta]
+ *   proxyUrl: el proxio de este node. Decide si lo grande puede ir por algo que no sea directo.
  *   owner: `ownerId` (huella de la maestra) que este node representa — es la mitad
  *   de la referencia compartible `ownerId + cid` (§3).
  * @returns {(msg: any) => Promise<any>}
  */
-export function createOps (node, { owner = null, version = null } = {}) {
+export function createOps (node, { owner = null, version = null, proxyUrl = null } = {}) {
   /** Operaciones que exigen un `cid` válido y que el blob exista. */
   const withBlob = (fn) => async (msg) => {
     const cid = typeof msg.cid === 'string' ? msg.cid : null
@@ -85,6 +89,23 @@ export function createOps (node, { owner = null, version = null } = {}) {
     const meta = node.stat(cid)
     if (!meta) return fail(msg.rid, 'not-found', 'no such cid')
     return fn(msg, cid, meta)
+  }
+
+  const uploads = new Uploads(node)
+  /**
+   * ¿Pueden ir estos bytes por el camino de AHORA? Por la red de Dotrino, no: solo WebRTC
+   * directo (`lib/network.js`). Por una red propia sí, con el tope del pilar si es el proxio.
+   */
+  const pathCheck = async (msg, ctx, size) => {
+    const route = (await ctx?.route?.()) ?? null
+    if (route === 'direct') return null
+    if (!proxyUrl || isDotrinoNetwork(proxyUrl)) {
+      return fail(msg.rid, 'needs-direct', `large files do not cross the Dotrino network (route: ${route}): it needs a direct channel`)
+    }
+    if (route !== 'turn' && size > RELAY_MAX_BYTES) {
+      return fail(msg.rid, 'too-big-for-relay', `${size} bytes do not go through the proxy (limit ${RELAY_MAX_BYTES}): it needs a direct channel`)
+    }
+    return null
   }
 
   const handlers = {
@@ -95,8 +116,7 @@ export function createOps (node, { owner = null, version = null } = {}) {
 
     /**
      * Guardar algo pequeño desde otro aparato tuyo. Los bytes llegan en base64
-     * dentro del sobre ya cifrado de la sesión, en UN mensaje: no hay subida por
-     * partes y no la va a haber (ver la cabecera del archivo).
+     * dentro del sobre ya cifrado de la sesión, en UN mensaje. Lo grande va por `up.*`.
      *
      * Que el aparato esté autorizado ya lo comprobó `verifyChain` antes de que
      * esto se llame; aquí solo se comprueba la forma y el tamaño.
@@ -120,7 +140,8 @@ export function createOps (node, { owner = null, version = null } = {}) {
         enc,
         acl,
         ttl: ttlMs > 0 ? Date.now() + ttlMs : null,
-        meta: cleanMeta(msg.meta)
+        meta: cleanMeta(msg.meta),
+        tag: typeof msg.tag === 'string' ? msg.tag.slice(0, 64) : null
       })
       return ok(msg.rid, { ...out, acl })
     },
@@ -141,7 +162,33 @@ export function createOps (node, { owner = null, version = null } = {}) {
       })
     }),
 
-    list: async (msg) => ok(msg.rid, { blobs: node.list() }),
+    list: async (msg) => ok(msg.rid, { blobs: node.list(typeof msg.tag === 'string' ? msg.tag : null) }),
+
+    /** Empieza o retoma una subida: dice cuántos bytes hay ya. */
+    'up.begin': async (msg, ctx) => {
+      const size = Number(msg.size)
+      const blocked = await pathCheck(msg, ctx, size)
+      if (blocked) return blocked
+      const out = await uploads.begin({
+        cid: msg.cid,
+        size,
+        mime: typeof msg.mime === 'string' ? msg.mime : 'application/octet-stream',
+        enc: msg.enc ? 1 : 0,
+        tag: typeof msg.tag === 'string' ? msg.tag.slice(0, 64) : null
+      })
+      return ok(msg.rid, out)
+    },
+
+    'up.part': async (msg, ctx) => {
+      if (typeof msg.data !== 'string' || !Number.isSafeInteger(msg.at)) return fail(msg.rid, 'bad-request', 'at and data are required')
+      // El camino puede caer de directo al proxio a mitad de una subida.
+      const up = uploads.open.get(msg.cid)
+      const blocked = up && await pathCheck(msg, ctx, up.size)
+      if (blocked) return blocked
+      return ok(msg.rid, { at: await uploads.part(msg.cid, msg.at, Buffer.from(msg.data, 'base64')) })
+    },
+
+    'up.end': async (msg) => ok(msg.rid, await uploads.finish(msg.cid)),
 
     stats: async (msg) => ok(msg.rid, { stats: node.stats() }),
 
@@ -203,16 +250,19 @@ export function createOps (node, { owner = null, version = null } = {}) {
     gc: async (msg) => ok(msg.rid, node.gc())
   }
 
-  return async function dispatch (msg) {
+  /** @param {any} msg @param {{ route?: () => Promise<string|null> }} [ctx]  por dónde va la sesión */
+  return async function dispatch (msg, ctx) {
     if (!msg || typeof msg !== 'object' || typeof msg.op !== 'string') {
       return fail(msg?.rid, 'bad-request', 'op is required')
     }
     const handler = handlers[msg.op]
     if (!handler) return fail(msg.rid, 'unknown-op', `unknown op: ${msg.op}`)
     try {
-      return await handler(msg)
+      return await handler(msg, ctx)
     } catch (e) {
-      return fail(msg.rid, e?.code === 'ENOSPC' ? 'no-space' : 'failed', e?.message || 'failed')
+      const known = ['bad-request', 'too-large', 'unknown-upload', 'wrong-offset', 'incomplete', 'corrupt']
+      const code = e?.code === 'ENOSPC' ? 'no-space' : known.includes(e?.code) ? e.code : 'failed'
+      return fail(msg.rid, code, e?.message || 'failed')
     }
   }
 }

@@ -384,6 +384,38 @@ esta sección prohíbe, solo que disfrazado. Lo que no cabe en un mensaje sube e
 o va por P2P. El tope se anuncia en `hello` (`maxBytes`) para que el cliente no lo
 adivine.
 
+**Corregido el 2026-11-01 (dueño): los archivos grandes sí van en partes por la sesión, y lo que
+decide es de quién es la red.** *«La red de Dotrino se usa para beneficio de Dotrino, sobre todo»*, y
+*«cada persona puede poner sus propios servicios en beneficio propio»*. El proxio y el TURN de Dotrino
+son para el contenido de Dotrino. `up.begin/part/end` (`src/uploads.js`, con reanudación) miran el
+camino en cada parte:
+
+| Camino | Red de Dotrino | Red propia de la cuenta |
+|---|---|---|
+| WebRTC directo | pasa, sin tope | pasa, sin tope |
+| TURN | no (`needs-direct`) | pasa |
+| proxio | no (`needs-direct`) | pasa, hasta `RELAY_MAX_BYTES` (`too-big-for-relay`) |
+
+Una red es propia si su proxio no está en `dotrino.com` (`lib/network.js`): el TURN lo administra
+el proxio conectado, así que no hace falta otro dato. **Esta comprobación vive en el node y en la
+app, no en el proxio**: orienta a quien usa nuestro código, pero no impide que alguien modifique el
+suyo. `put`/`get` de 256 KB siguen igual: lo que es un mensaje usa el plano de control.
+
+### 7.1.1. La biblioteca: un node es un aparato del perfil
+
+El node del usuario es un miembro de su acta y recibe la llave de la cuenta. Eso permite abrir en
+esa máquina lo que subieron los demás aparatos (`src/library.js`, `src/gui.js`):
+
+- **Dos blobs por elemento.** El archivo, cifrado por tramos de 1 MiB con una llave propia
+  (`lib/segments.js`; misma forma en `SegmentCipher` de `dotrino-native`, con vector de oro), y su
+  **ficha**: JSON con nombre, formato y esa llave, cerrado con la llave de la cuenta y con `tag: 'library'`.
+- **La ficha es inmutable.** Renombrar sube otra con el mismo `id`, y manda el `updatedAt` más nuevo.
+- **La ventana** (`dotrino-content gui`) escucha en loopback y sirve bytes en claro, con rangos.
+  Tiene llave por arranque, cookie `SameSite=Strict`, comprobación de `Host` y de `Origin`.
+- **«Abrir con otro programa»** deja una copia en `XDG_RUNTIME_DIR` (memoria) y la borra al apagar
+  el node. Donde no existe esa carpeta (macOS, Windows) la copia va al temporal del sistema, en disco.
+- **Borrar en la ventana** quita la copia del node; el teléfono conserva la suya y no la vuelve a subir.
+
 ### 7.2. Modo público HTTP: SOLO vistas previas, y solo en el node del dueño
 
 > **Reencuadrado por el dueño el 2026-08-21, e IMPLEMENTADO** (`src/public.js`,

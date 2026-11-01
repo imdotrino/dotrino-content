@@ -5,6 +5,7 @@
  *   dotrino-content enroll <código>     enlaza este node a tu vault (una vez)
  *   dotrino-content update [--approval on|off] [--notify on|off]
  *                                       cómo se actualiza este node (CONVENCIONES §15)
+ *   dotrino-content gui                 abre en el navegador lo que subieron tus aparatos
  *   dotrino-content start [--port 3777] [--dir <ruta>] [--max-gb <n>] [--gc-min <min>]
  *                         [--no-agent]  arranca sin el plano de control
  *                         [--public]    abre el puerto de VISTAS PREVIAS (§7.2)
@@ -40,7 +41,8 @@ const USAGE = `uso:
                                     este node se actualiza solo. --approval on: antes pide permiso a
                                     quien aprueba en tu bóveda. --notify off: no avisa de que se
                                     actualizó. Sin opciones, dice cómo está.
-  dotrino-content start [--port 3777] [--dir <ruta>] [--max-gb <n>] [--max-blob-mb <n>] [--gc-min <min>] [--no-agent]
+  dotrino-content gui               abre en el navegador tus audios y archivos (el node tiene que estar corriendo)
+  dotrino-content start [--port 3777] [--gui-port 3779] [--dir <ruta>] [--max-gb <n>] [--max-blob-mb <n>] [--gc-min <min>] [--no-agent]
                         [--public] [--public-port 3778] [--public-host 0.0.0.0] [--public-max-kb 512]
                         [--public-rate 60] [--public-egress-gb <n>] [--public-url https://…] [--app-url https://…]
                         [--public-index]`
@@ -60,6 +62,7 @@ const { values, positionals } = parseArgs({
   allowPositionals: true,
   options: {
     port: { type: 'string' },
+    'gui-port': { type: 'string' },
     dir: { type: 'string' },
     'max-gb': { type: 'string' },
     'max-blob-mb': { type: 'string' },
@@ -86,9 +89,28 @@ if (values.help) {
 }
 
 const cmd = positionals[0] || 'start'
-if (cmd !== 'start' && cmd !== 'enroll' && cmd !== 'info') {
+if (cmd !== 'start' && cmd !== 'enroll' && cmd !== 'info' && cmd !== 'gui') {
   console.error(`comando desconocido: ${cmd}\n${USAGE}`)
   process.exit(1)
+}
+
+// `gui`: abre la ventana del node que está corriendo. La llave es de ese arranque.
+if (cmd === 'gui') {
+  const { readFileSync } = await import('node:fs')
+  const { spawn } = await import('node:child_process')
+  let t
+  try { t = JSON.parse(readFileSync(path.join(linkDir(), 'gui.json'), 'utf8')) } catch (e) {
+    if (e.code !== 'ENOENT') throw e
+    console.error('el node no está corriendo o no está enlazado a tu bóveda. Arráncalo con: dotrino-content start')
+    process.exit(1)
+  }
+  const url = `http://127.0.0.1:${t.port}/?t=${t.token}`
+  const [c, a] = process.platform === 'darwin' ? ['open', [url]] : process.platform === 'win32' ? ['explorer.exe', [url]] : ['xdg-open', [url]]
+  const child = spawn(c, a, { detached: true, stdio: 'ignore' })
+  child.on('error', () => console.log(`abre esta dirección en tu navegador:\n${url}`))
+  child.unref()
+  console.log(`http://127.0.0.1:${t.port}/`)
+  process.exit(0)
 }
 
 // `info`: la pieza común de todos los comandos (CONVENCIONES §15.1). Lo que se viene a
@@ -212,6 +234,32 @@ if (values['no-agent']) {
   console.log('control plane: not linked (run `dotrino-content enroll <code>` to manage it from your apps)')
 }
 
+// La ventana local (`dotrino-content gui`): necesita el enlace, porque es la llave de cifrado de
+// este aparato y el llavero de su acta lo que abre lo que subieron los otros.
+let gui = null
+if (agent) {
+  try {
+    const { serviceDir: svc } = await import('../src/vaultEnv.js')
+    const { Library, loadEncKey } = await import('../src/library.js')
+    const { createGui, DEFAULT_GUI_PORT } = await import('../src/gui.js')
+    const { loadLink } = await import('@dotrino/remote-agent/link')
+    const myEncPrivateKey = await loadEncKey(svc())
+    const library = new Library({
+      node,
+      account: async () => {
+        const link = loadLink(linkDir())
+        return { keyring: link?.acta?.keyring || [], myPub: link.device.publickey, myEncPrivateKey }
+      }
+    })
+    const guiPort = Number(values['gui-port'] || DEFAULT_GUI_PORT)
+    gui = createGui({ library, port: guiPort, tokenFile: path.join(linkDir(), 'gui.json') })
+    gui.server.on('error', (e) => console.error(`library window: did not start (${e.message})`))
+    gui.server.listen(guiPort, '127.0.0.1', () => console.log(`library window on http://127.0.0.1:${guiPort}  ·  open it with: dotrino-content gui`))
+  } catch (e) {
+    console.error(`library window: did not start (${e.message})`)
+  }
+}
+
 // Modo público (§7.2). Va DESPUÉS del agente a propósito: el `owner` del node lo
 // resuelve el enlace con el vault, y es la mitad izquierda de la referencia
 // `ownerId + cid` que la tarjeta necesita para armar el enlace "Abrir".
@@ -249,6 +297,7 @@ const shutdown = () => {
   clearInterval(gcTimer)
   try { stopSelfUpdate?.() } catch (_) {}
   try { agent?.close() } catch (_) {}
+  gui?.close().catch((e) => console.error(`library window: ${e.message}`))
   try { publicServer?.close() } catch (_) {}
   server.close(() => { node.close(); process.exit(0) })
 }

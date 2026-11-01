@@ -47,6 +47,18 @@ Requiere **Node ≥ 22.5**. El core usa solo `node:crypto` y `node:sqlite`; la
 identidad viene de los pilares del ecosistema (`@dotrino/remote-agent`,
 `@dotrino/identity`).
 
+## Tus audios en esta computadora
+
+La Grabadora copia sus grabaciones a tu node cuando el teléfono y la máquina se conectan
+directamente. Para escucharlas, abrirlas con otro programa, guardarlas o borrarlas:
+
+```sh
+dotrino-content gui
+```
+
+Abre una ventana en tu navegador, servida solo por esta máquina (`--gui-port`, 3779). Diseño en
+[`docs/DISENO.md`](./docs/DISENO.md) §7.1.1.
+
 ## Actualizarse
 
 El node **se actualiza solo** (CONVENCIONES §15): mira una vez al día si hay versión nueva,
@@ -87,13 +99,13 @@ thumb <cid> <thumbCid>   enlazar la miniatura (otro blob, público por su cuenta
 gc                       recolectar vencidos ahora
 ```
 
+Los archivos grandes van por `up.begin`, `up.part` y `up.end`, y se retoman si se cortan. Por la
+red de Dotrino solo pasan con WebRTC directo; un TURN o un proxio propios también valen (§7.1).
+
 **`put` y `get` tienen un tope duro de 256 KB, y eso NO es un límite a subir: es la
 frontera.** El plano de control es el proxy del ecosistema —trama de 1 MB, cola de
 mensajes, no un almacén—, así que por aquí pasa lo que **es** un mensaje: un post (un
-eco pesa cientos de bytes) y una miniatura (decenas de KB). Por eso **no hay subida
-por partes**: trocear sería disimular la frontera y acabar usando la infraestructura
-del ecosistema como transporte. Los originales suben en local por HTTP y, entre
-aparatos, por P2P.
+eco pesa cientos de bytes) y una miniatura (decenas de KB). Lo grande va por su propio camino.
 
 ## Vistas previas públicas (`--public`, apagado por defecto)
 

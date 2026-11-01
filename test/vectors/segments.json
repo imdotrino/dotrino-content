@@ -1,0 +1,7 @@
+{
+  "key": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
+  "plainBytes": 2097159,
+  "fill": "0x61",
+  "cipherBytes": 2097207,
+  "cid": "sha256-e1aa4cfcb3d123b2cc08e134f90c4cce0f263db9d7c2fac3d1e230b14afec68e"
+}

@@ -53,11 +53,15 @@ export async function enrollToVault (qr, { dir = serviceDir(), onCode, onReplace
   // El plano de control usa la misma identidad. `saveLink` es de remote-agent, y su
   // formato es el que lee `startRemoteAgent` al arrancar.
   const { saveLink } = await import('@dotrino/remote-agent/link')
+  const { readServiceIdentity } = await import('@dotrino/vault/service')
+  const proxy = readServiceIdentity(dir)?.proxy
+  if (!proxy) throw new Error(`the enrolled identity in ${dir} does not say which proxy to use`)
   saveLink(linkDir(), {
     device: res.device,
     cert: res.cert,
     iss: res.iss,
-    proxy: res.cert?.proxy || 'wss://proxy.dotrino.com',
+    // El de la invitación: una cuenta con proxio propio se queda en el suyo.
+    proxy,
     label: label || 'content',
     at: Date.now()
   })

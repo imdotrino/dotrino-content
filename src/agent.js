@@ -51,7 +51,7 @@ export const isLinked = (dir = linkDir()) => {
  * @returns {Promise<{ machine: string, machineId: string, owner: string, close: () => void }>}
  */
 export async function startContentAgent ({
-  node, dir = linkDir(), proxyUrl, version = null, client, quiet = false, onRevoked, announce = true
+  node, dir = linkDir(), proxyUrl, version = null, client, quiet = false, onRevoked, announce = true, networkOverride = null
 } = {}) {
   if (!node) throw new Error('startContentAgent: node is required')
   const link = loadLink(dir)
@@ -64,7 +64,19 @@ export async function startContentAgent ({
   // ya encuentre el despachador armado.
   const owner = await pubkeyId(link.iss)
   node.owner = owner
-  const dispatch = createOps(node, { owner, version })
+  // `networkOverride`: solo para pruebas, para juzgar un proxio local como si fuera otro.
+  const nodeProxy = networkOverride || proxyUrl || link.proxy || null
+  const dispatch = createOps(node, { owner, version, proxyUrl: nodeProxy })
+
+  /** Por dónde va una sesión, mirado como mucho cada 5 s: una subida son miles de partes. */
+  const routes = new WeakMap()
+  async function routeOf (session) {
+    const hit = routes.get(session)
+    if (hit && Date.now() - hit.at < 5000) return hit.route
+    const route = session.direct() && agent.client?.routeTo ? await agent.client.routeTo(session.from) : 'proxy'
+    routes.set(session, { route, at: Date.now() })
+    return route
+  }
 
   const agent = await startRemoteAgent({
     dir,
@@ -72,9 +84,10 @@ export async function startContentAgent ({
     client,
     quiet,
     onRevoked,
+    label: 'content',
     onSession: (session) => {
       session.on('message', (msg) => {
-        dispatch(msg)
+        dispatch(msg, { route: () => routeOf(session) })
           .then((reply) => session.send(reply))
           .catch((e) => session.send({ rid: msg?.rid, ok: false, code: 'failed', error: e.message }))
       })
