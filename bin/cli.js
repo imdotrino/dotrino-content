@@ -100,7 +100,7 @@ if (cmd === 'gui') {
   const { spawn } = await import('node:child_process')
   let t
   try { t = JSON.parse(readFileSync(path.join(linkDir(), 'gui.json'), 'utf8')) } catch (e) {
-    if (e.code !== 'ENOENT') throw e
+    if (/** @type {NodeJS.ErrnoException} */ (e).code !== 'ENOENT') throw e
     console.error('el node no está corriendo o no está enlazado a tu bóveda. Arráncalo con: dotrino-content start')
     process.exit(1)
   }
@@ -172,7 +172,7 @@ if (cmd === 'enroll') {
     console.log(`\nahora carga su configuración en la bóveda (namespace «${NS}»):`)
     console.log('  dotrino-vault secret set content CONTENT_STORAGE=local --public')
   } catch (e) {
-    console.error(`\nno se pudo enlazar: ${e.message}`)
+    console.error(`\nno se pudo enlazar: ${/** @type {Error} */ (e).message}`)
     process.exit(1)
   }
   process.exit(0)
@@ -189,6 +189,7 @@ const gcMin = Number(values['gc-min'] || 60)
 // ahí sale `CONTENT_STORAGE` y, con él, qué almacén usa este node. Sin vault esto no
 // hace nada y el node corre en local, que es el modo normal de un autohospedado.
 const { startVaultConfig, isEnrolled } = await import('../src/vaultEnv.js')
+/** @param {string} m */
 const log = (m) => console.log(m)
 const vaultConfig = startVaultConfig({ log })
 if (!isEnrolled()) console.log('no vault: local config (enroll with: dotrino-content enroll <code>)')
@@ -228,7 +229,7 @@ if (values['no-agent']) {
   try {
     agent = await startContentAgent({ node, version: VERSION })
   } catch (e) {
-    console.error(`control plane: did not start (${e.message})`)
+    console.error(`control plane: did not start (${/** @type {Error} */ (e).message})`)
   }
 } else {
   console.log('control plane: not linked (run `dotrino-content enroll <code>` to manage it from your apps)')
@@ -248,7 +249,8 @@ if (agent) {
       node,
       account: async () => {
         const link = loadLink(linkDir())
-        return { keyring: link?.acta?.keyring || [], myPub: link.device.publickey, myEncPrivateKey }
+        if (!link) throw new Error(`this node is no longer linked (${linkDir()})`)
+        return { keyring: link.acta?.keyring || [], myPub: link.device.publickey, myEncPrivateKey }
       }
     })
     const guiPort = Number(values['gui-port'] || DEFAULT_GUI_PORT)
@@ -256,7 +258,7 @@ if (agent) {
     gui.server.on('error', (e) => console.error(`library window: did not start (${e.message})`))
     gui.server.listen(guiPort, '127.0.0.1', () => console.log(`library window on http://127.0.0.1:${guiPort}  ·  open it with: dotrino-content gui`))
   } catch (e) {
-    console.error(`library window: did not start (${e.message})`)
+    console.error(`library window: did not start (${/** @type {Error} */ (e).message})`)
   }
 }
 

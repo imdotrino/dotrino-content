@@ -39,14 +39,21 @@ export class BlobStore {
     return this
   }
 
-  /** Path en disco de un cid (no comprueba existencia). */
+  /**
+   * Path en disco de un cid (no comprueba existencia).
+   * @param {string} cid
+   */
   pathFor (cid) {
     if (!isValidCid(cid)) throw new Error(`invalid cid: ${cid}`)
     const hex = cid.slice('sha256-'.length)
     return path.join(this.blobsDir, hex.slice(0, 2), hex.slice(2, 4), cid)
   }
 
-  /** ¿Existe el blob en disco? → size o null. */
+  /**
+   * ¿Existe el blob en disco? → size o null.
+   * @param {string} cid
+   * @returns {Promise<number | null>}
+   */
   async sizeOf (cid) {
     try {
       const st = await stat(this.pathFor(cid))
@@ -97,6 +104,8 @@ export class BlobStore {
 
   /**
    * Stream de lectura, con rango opcional [start, end] inclusivo.
+   * @param {string} cid
+   * @param {import('./types.js').ByteRange | null} [range]
    * @returns {import('node:fs').ReadStream}
    */
   read (cid, range) {
@@ -111,6 +120,9 @@ export class BlobStore {
    * tipo REAL de una imagen por sus bytes mágicos (§7.2) **sin abrir el archivo por su
    * ruta**: con un bucket detrás no hay ruta que abrir, así que olfatear tiene que ser
    * una operación del almacén y no de quien lo usa.
+   * @param {string} cid
+   * @param {number} n
+   * @returns {Promise<Buffer>}
    */
   async readHead (cid, n) {
     const fh = await open(this.pathFor(cid), 'r')
@@ -121,6 +133,7 @@ export class BlobStore {
     } finally { await fh.close() }
   }
 
+  /** @param {string} cid */
   async remove (cid) {
     await rm(this.pathFor(cid), { force: true })
   }
@@ -129,6 +142,7 @@ export class BlobStore {
    * Suelta la copia LOCAL y deja la de atrás. Sin bucket detrás no hay copia de
    * atrás, así que esto es exactamente `remove` — y por eso el node comprueba
    * `backed` antes de llamarlo: con este backend, desalojar es destruir.
+   * @param {string} cid
    */
   async evict (cid) {
     return this.remove(cid)

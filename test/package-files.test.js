@@ -17,7 +17,9 @@ test('every relative import of a published file is published too', () => {
     const src = readFileSync(f, 'utf8')
     for (const m of src.matchAll(/(?:from|import)\s*\(?\s*['"](\.{1,2}\/[^'"]+)['"]/g)) {
       const target = normalize(join(dirname(f), m[1]))
-      if (!files.has(target)) missing.push(`${f} → ${target}`)
+      // Un `import('./types.js')` de JSDoc es un tipo: lo que tiene que publicarse es su .d.ts.
+      const typeOnly = m[0].startsWith('import') && files.has(target.replace(/\.js$/, '.d.ts'))
+      if (!files.has(target) && !typeOnly) missing.push(`${f} → ${target}`)
     }
   }
   assert.deepEqual(missing, [])

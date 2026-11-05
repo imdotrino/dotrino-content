@@ -19,13 +19,20 @@ import { createHmac, createHash } from 'node:crypto'
 const ALGO = 'AWS4-HMAC-SHA256'
 const EMPTY_SHA256 = 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855'
 
+/** @param {string | Buffer} data */
 const sha256hex = (data) => createHash('sha256').update(data).digest('hex')
+/**
+ * @param {string | Buffer} key
+ * @param {string} data
+ */
 const hmac = (key, data) => createHmac('sha256', key).update(data, 'utf8').digest()
 
 /**
  * Codificación de URI de AWS: es la de RFC 3986, que NO es la de `encodeURIComponent`
  * (deja pasar `!'()*`). Una sola diferencia hace que la firma no cuadre y el error que
  * devuelve el servidor no dice cuál.
+ * @param {unknown} str
+ * @param {boolean} [encodeSlash]
  */
 export function uriEncode (str, encodeSlash = true) {
   let out = ''
@@ -38,7 +45,10 @@ export function uriEncode (str, encodeSlash = true) {
   return out
 }
 
-/** `20150830T123600Z` y `20150830` a partir de una fecha. */
+/**
+ * `20150830T123600Z` y `20150830` a partir de una fecha.
+ * @param {Date} date
+ */
 export function amzDate (date) {
   const iso = date.toISOString().replace(/[-:]/g, '').replace(/\.\d{3}/, '')
   return { amz: iso, day: iso.slice(0, 8) }
@@ -68,6 +78,7 @@ export function signRequest ({
 
   // Las cabeceras firmadas van en minúsculas y ordenadas; `host` y la fecha son
   // obligatorias, y en S3 también el hash del cuerpo.
+  /** @type {Record<string, string>} */
   const all = { ...headers, host: u.host, 'x-amz-date': amz }
   if (service === 's3') all['x-amz-content-sha256'] = payloadHash
   const names = Object.keys(all).map((k) => k.toLowerCase()).sort()
@@ -112,6 +123,12 @@ export function signRequest ({
 
 /** Error de S3 con el código que devolvió el servidor (`NoSuchKey`, `AccessDenied`…). */
 export class S3Error extends Error {
+  /**
+   * @param {number} status
+   * @param {string} code
+   * @param {string} message
+   * @param {string} [key]
+   */
   constructor (status, code, message, key) {
     super(`S3 ${status} ${code}${key ? ` (${key})` : ''}: ${message}`)
     this.name = 'S3Error'
@@ -121,6 +138,7 @@ export class S3Error extends Error {
 }
 
 /** El cuerpo de error de S3 es XML; solo interesan dos etiquetas. */
+/** @param {string} xml */
 const parseError = (xml) => ({
   code: /<Code>([^<]+)<\/Code>/.exec(xml)?.[1] || 'Unknown',
   message: /<Message>([^<]+)<\/Message>/.exec(xml)?.[1] || xml.slice(0, 200)
@@ -152,7 +170,10 @@ export class S3Bucket {
     this.fetch = f
   }
 
-  /** URL de un objeto (path-style: es lo que entienden todos los proveedores). */
+  /**
+   * URL de un objeto (path-style: es lo que entienden todos los proveedores).
+   * @param {string} key
+   */
   urlFor (key) {
     return `${this.base}/${key.split('/').map((s) => uriEncode(s)).join('/')}`
   }
@@ -214,28 +235,40 @@ export class S3Bucket {
   /**
    * Descarga un objeto. `range` es `{ start, end }` inclusivo, igual que en el
    * BlobStore, para que el 206 de la API local siga funcionando igual.
-   * @returns {Promise<{ body: ReadableStream, size: number|null, contentType: string|null }>}
+   * @param {string} key
+   * @param {{ start: number, end: number } | null} [range]
+   * @returns {Promise<{ body: ReadableStream<Uint8Array>, size: number|null, contentType: string|null }>}
    */
   async get (key, range = null) {
+    /** @type {Record<string, string>} */
     const headers = range ? { range: `bytes=${range.start}-${range.end}` } : {}
     const res = await this.request('GET', key, { headers })
     if (!res.ok) {
       const { code, message } = parseError(await res.text())
       throw new S3Error(res.status, code, message, key)
     }
+    if (!res.body) throw new S3Error(res.status, 'NoBody', 'the answer to a GET has no body', key)
     const len = res.headers.get('content-length')
     return { body: res.body, size: len == null ? null : Number(len), contentType: res.headers.get('content-type') }
   }
 
-  /** Los primeros `n` bytes, que es lo que necesita olfatear un tipo de imagen (§7.2). */
+  /**
+   * Los primeros `n` bytes, que es lo que necesita olfatear un tipo de imagen (§7.2).
+   * @param {string} key
+   * @param {number} n
+   */
   async head (key, n) {
     const { body } = await this.get(key, { start: 0, end: n - 1 })
+    /** @type {Buffer[]} */
     const chunks = []
     for await (const c of body) chunks.push(Buffer.from(c))
     return Buffer.concat(chunks)
   }
 
-  /** Tamaño del objeto, o `null` si no está. No baja el cuerpo. */
+  /**
+   * Tamaño del objeto, o `null` si no está. No baja el cuerpo.
+   * @param {string} key
+   */
   async size (key) {
     const res = await this.request('HEAD', key)
     if (res.status === 404) return null
@@ -244,7 +277,10 @@ export class S3Bucket {
     return len == null ? null : Number(len)
   }
 
-  /** Borra. Borrar lo que no está NO es un error (igual que `rm -f`). */
+  /**
+   * Borra. Borrar lo que no está NO es un error (igual que `rm -f`).
+   * @param {string} key
+   */
   async remove (key) {
     const res = await this.request('DELETE', key)
     if (!res.ok && res.status !== 404) {

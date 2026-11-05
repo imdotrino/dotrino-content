@@ -41,7 +41,27 @@ import { isDotrinoNetwork } from '../lib/network.js'
 import { isValidCid } from './blobstore.js'
 import { Uploads } from './uploads.js'
 
+/**
+ * Un mensaje del plano de control tal como llega por la red (ya descifrado y autorizado). Sus
+ * campos NO son de fiar: cada operación los comprueba uno a uno antes de usarlos, y por eso
+ * aquí van sin tipo.
+ * @typedef {{ op: string, rid?: unknown, [k: string]: any }} Msg
+ */
+/** @typedef {{ route?: () => Promise<string | null> }} Ctx  por dónde va la sesión */
+/** @typedef {{ rid: unknown, ok: boolean, [k: string]: unknown }} Reply */
+
+/**
+ * @param {unknown} rid
+ * @param {object} result
+ * @returns {Reply}
+ */
 const ok = (rid, result) => ({ rid, ok: true, ...result })
+/**
+ * @param {unknown} rid
+ * @param {string} code
+ * @param {string} error
+ * @returns {Reply}
+ */
 const fail = (rid, code, error) => ({ rid, ok: false, code, error })
 
 /**
@@ -54,15 +74,22 @@ const fail = (rid, code, error) => ({ rid, ok: false, code, error })
 const MAX_LINKS = 4
 const MAX_LINK_LEN = 300
 
+/**
+ * @param {any} src  lo que mandó el cliente: no es de fiar
+ * @returns {{ name?: string, title?: string, description?: string, links?: string[] } | null}
+ */
 function cleanMeta (src) {
   if (!src || typeof src !== 'object') return null
+  /** @type {{ name?: string, title?: string, description?: string, links?: string[] }} */
   const out = Object.fromEntries(['name', 'title', 'description']
     .map((k) => [k, typeof src[k] === 'string' ? src[k].trim().slice(0, 300) : null])
     .filter(([, v]) => v))
   // Los ENLACES del contenido (en un eco, la fuente de la que habla). Solo http(s)
   // y contados: `meta` lo escribe quien publica y la tarjeta lo pinta como `href`,
   // así que aquí se filtra en vez de creerse.
-  const links = (Array.isArray(src.links) ? src.links : [])
+  /** @type {unknown[]} */
+  const given = Array.isArray(src.links) ? src.links : []
+  const links = given
     .filter((u) => typeof u === 'string')
     .map((u) => u.trim())
     .filter((u) => /^https?:\/\//i.test(u) && u.length <= MAX_LINK_LEN)
@@ -75,14 +102,18 @@ function cleanMeta (src) {
  * Construye el despachador de operaciones de un node.
  *
  * @param {import('./node.js').ContentNode} node
- * @param {{ owner?: string|null, version?: string, proxyUrl?: string|null }} [meta]
+ * @param {{ owner?: string|null, version?: string|null, proxyUrl?: string|null }} [meta]
  *   proxyUrl: el proxio de este node. Decide si lo grande puede ir por algo que no sea directo.
  *   owner: `ownerId` (huella de la maestra) que este node representa — es la mitad
  *   de la referencia compartible `ownerId + cid` (§3).
- * @returns {(msg: any) => Promise<any>}
+ * @returns {(msg: any, ctx?: Ctx) => Promise<Reply>}
  */
 export function createOps (node, { owner = null, version = null, proxyUrl = null } = {}) {
-  /** Operaciones que exigen un `cid` válido y que el blob exista. */
+  /**
+   * Operaciones que exigen un `cid` válido y que el blob exista.
+   * @param {(msg: Msg, cid: string, meta: import('./types.js').BlobRow) => Promise<Reply>} fn
+   * @returns {(msg: Msg) => Promise<Reply>}
+   */
   const withBlob = (fn) => async (msg) => {
     const cid = typeof msg.cid === 'string' ? msg.cid : null
     if (!cid) return fail(msg.rid, 'bad-request', 'cid is required')
@@ -96,6 +127,11 @@ export function createOps (node, { owner = null, version = null, proxyUrl = null
    * ¿Pueden ir estos bytes por el camino de AHORA? Por la red de Dotrino, no: solo WebRTC
    * directo (`lib/network.js`). Por una red propia sí, con el tope del pilar si es el proxio.
    */
+  /**
+   * @param {Msg} msg
+   * @param {Ctx | undefined} ctx
+   * @param {number} size
+   */
   const pathCheck = async (msg, ctx, size) => {
     const route = (await ctx?.route?.()) ?? null
     if (route === 'direct') return null
@@ -108,6 +144,7 @@ export function createOps (node, { owner = null, version = null, proxyUrl = null
     return null
   }
 
+  /** @type {Record<string, (msg: Msg, ctx?: Ctx) => Promise<Reply>>} */
   const handlers = {
     /** Quién es este node: sirve de saludo y de comprobación de vida. */
     hello: async (msg) => ok(msg.rid, {
@@ -155,6 +192,7 @@ export function createOps (node, { owner = null, version = null, proxyUrl = null
         return fail(msg.rid, 'too-large',
           `${meta.size} bytes do not fit in the control plane; fetch it locally or peer to peer`)
       }
+      /** @type {Buffer[]} */
       const chunks = []
       for await (const c of node.read(cid)) chunks.push(c)
       return ok(msg.rid, {
@@ -212,6 +250,7 @@ export function createOps (node, { owner = null, version = null, proxyUrl = null
       const acl = msg.acl === ACL.PUBLIC ? ACL.PUBLIC : msg.acl === ACL.PRIVATE ? ACL.PRIVATE : null
       if (!acl) return fail(msg.rid, 'bad-request', `acl must be "${ACL.PUBLIC}" or "${ACL.PRIVATE}"`)
       const meta = node.stat(cid)
+      if (!meta) return fail(msg.rid, 'not-found', 'no such cid')
       // Un blob cifrado no se puede marcar público: nadie sin la llave podría leerlo,
       // así que decir que lo es solo engaña a quien lo mire.
       if (acl === ACL.PUBLIC && meta.enc) return fail(msg.rid, 'bad-request', 'an encrypted blob cannot be public')
@@ -250,7 +289,11 @@ export function createOps (node, { owner = null, version = null, proxyUrl = null
     gc: async (msg) => ok(msg.rid, node.gc())
   }
 
-  /** @param {any} msg @param {{ route?: () => Promise<string|null> }} [ctx]  por dónde va la sesión */
+  /**
+   * @param {any} msg  lo que llegó por la sesión: se comprueba antes de usarlo
+   * @param {Ctx} [ctx]  por dónde va la sesión
+   * @returns {Promise<Reply>}
+   */
   return async function dispatch (msg, ctx) {
     if (!msg || typeof msg !== 'object' || typeof msg.op !== 'string') {
       return fail(msg?.rid, 'bad-request', 'op is required')
@@ -259,9 +302,10 @@ export function createOps (node, { owner = null, version = null, proxyUrl = null
     if (!handler) return fail(msg.rid, 'unknown-op', `unknown op: ${msg.op}`)
     try {
       return await handler(msg, ctx)
-    } catch (e) {
+    } catch (caught) {
+      const e = /** @type {(Error & { code?: string }) | null | undefined} */ (caught)
       const known = ['bad-request', 'too-large', 'unknown-upload', 'wrong-offset', 'incomplete', 'corrupt']
-      const code = e?.code === 'ENOSPC' ? 'no-space' : known.includes(e?.code) ? e.code : 'failed'
+      const code = e?.code === 'ENOSPC' ? 'no-space' : e?.code && known.includes(e.code) ? e.code : 'failed'
       return fail(msg.rid, code, e?.message || 'failed')
     }
   }

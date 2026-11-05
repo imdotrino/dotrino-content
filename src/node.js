@@ -10,12 +10,15 @@ import { mkdir } from 'node:fs/promises'
 import { BlobStore, isValidCid } from './blobstore.js'
 import { Index } from './db.js'
 
+/** @typedef {import('./types.js').BlobRow} BlobRow */
+/** @typedef {import('./types.js').BlobMeta} BlobMeta */
+
 export { isValidCid }
 
 export class ContentNode {
   /**
    * @param {{ dir: string, maxBytes?: number, maxBlobBytes?: number, owner?: string|null,
-   *           store?: any, log?: (m:string)=>void }} opts
+   *           store?: import('./types.js').Store, publicBase?: string|null, log?: (m:string)=>void }} opts
    *   dir: raíz de datos · maxBytes: cuota total de disco (0 = sin límite)
    *   maxBlobBytes: tamaño máximo por blob (0 = sin límite)
    *   owner: `ownerId` de la maestra (lo pone el agente al enlazar; null sin vault)
@@ -29,14 +32,23 @@ export class ContentNode {
     this.owner = opts.owner || null
     // El almacén se puede INYECTAR (`storage.js` monta el de bucket cuando toca). Por
     // defecto, disco: sin configuración, un node funciona con lo que hay en la máquina.
+    /** @type {import('./types.js').Store} */
     this.store = opts.store || new BlobStore(opts.dir)
     // Base de la URL pública del bucket (§15.13). Sin bucket público es null y lo
     // público viaja por la red, que es el camino que SIEMPRE existe.
     this.publicBase = opts.publicBase || null
+    /** @type {Index | null} */
     this.index = null
     /** Subidas al bucket en curso, por cid: para no lanzar dos veces la misma. */
+    /** @type {Map<string, Promise<void>>} */
     this._uploading = new Map()
     this.log = opts.log || (() => {})
+  }
+
+  /** El índice, que existe desde `init()`. */
+  get idx () {
+    if (!this.index) throw new Error('ContentNode: init() was not called')
+    return this.index
   }
 
   async init () {
@@ -49,6 +61,8 @@ export class ContentNode {
   /**
    * Sube un stream. Si la cuota no alcanza, intenta GC de no-pineados; si aun
    * así no cabe, rechaza con code ENOSPC (no borra pineados jamás).
+   * @param {import('node:stream').Readable} readable
+   * @param {import('./types.js').PutOptions} [opts]
    */
   async put (readable, { mime = 'application/octet-stream', enc = 0, ttl = null, acl = null, meta = null, tag = null } = {}) {
     const { cid, size, existed } = await this.store.put(readable, {
@@ -58,28 +72,34 @@ export class ContentNode {
       // La cuota es del DISCO, así que cuenta lo que está cacheado aquí, no el
       // inventario: con bucket detrás, lo desalojado sigue existiendo (§15.11)
       // pero ya no ocupa nada — contarlo dejaría la cuota excedida para siempre.
-      const over = (this.index.cachedBytes() + size) - this.maxBytes
+      const over = (this.idx.cachedBytes() + size) - this.maxBytes
       if (over > 0 && this.gc({ needBytes: over }).freed < over) {
         await this.store.remove(cid)
         throw Object.assign(new Error('disk quota exceeded'), { code: 'ENOSPC' })
       }
     }
-    this.index.upsert({ cid, size, mime, owner: this.owner, enc, acl, ttl, meta, tag })
+    this.idx.upsert({ cid, size, mime, owner: this.owner, enc, acl, ttl, meta, tag })
     // Con bucket detrás, la subida va DESPUÉS de responder: quien sube no espera a la
     // red. Hasta que el bucket confirme, este blob no es desalojable (§15.11).
     if (!existed) this.backup(cid, { size, mime, public: acl === 'public' })
     return { cid, size, mime, existed }
   }
 
-  /** Metadatos de un blob (o null). */
+  /**
+   * Metadatos de un blob (o null).
+   * @param {unknown} cid
+   * @returns {BlobRow | null}
+   */
   stat (cid) {
-    return isValidCid(cid) ? this.index.get(cid) : null
+    return isValidCid(cid) ? this.idx.get(cid) : null
   }
 
   /**
    * La URL pública de un blob, o null. Es un ATAJO (§15.13), nunca el enlace: solo
    * existe si hay bucket público, el blob está marcado público y en claro, y el
    * bucket YA confirmó esos bytes (`remote`) — una URL que todavía da 404 no ayuda.
+   * @param {string} cid
+   * @returns {string | null}
    */
   publicUrl (cid) {
     if (!this.publicBase || !this.store.backed || typeof this.store.urlFor !== 'function') return null
@@ -92,13 +112,15 @@ export class ContentNode {
    * Marca un blob como público o privado (`acl`). Es lo único que autoriza a que
    * los bytes salgan del node cuando esté encendido el modo público (DISENO.md
    * §7.2); sin `public` explícito, no sale.
+   * @param {string} cid
+   * @param {string | null} acl  null = sin ACL (privado)
    */
   setAcl (cid, acl) {
-    const ok = this.index.setAcl(cid, acl)
+    const ok = this.idx.setAcl(cid, acl)
     // Publicar mueve los bytes al bucket público, que es OTRO bucket (§15.1). Sin esto
     // el blob quedaría marcado público y sin estar donde se sirve lo público.
     if (ok && acl === 'public' && this.store.backed) {
-      const m = this.index.get(cid)
+      const m = this.idx.get(cid)
       if (m && !m.enc) this.backup(cid, { size: m.size, mime: m.mime, public: true })
     }
     return ok
@@ -111,16 +133,21 @@ export class ContentNode {
    *
    * No espera nadie a esto (se lanza y se olvida), pero un fallo se REPORTA: lo que no
    * subió sigue siendo la cola pendiente del índice, y se reintenta al arrancar.
+   * @param {string} cid
+   * @param {import('./types.js').UploadMeta} meta
+   * @returns {Promise<void> | null}
    */
   backup (cid, meta) {
     if (!this.store.backed) return null
+    if (!this.store.upload) throw new Error('a store with a bucket behind it has no upload()')
+    const upload = this.store.upload.bind(this.store)
     // Si ya hay una subida en curso (la privada, típicamente), esta va DETRÁS, no se
     // descarta: publicar a mitad de la subida tiene que terminar en el bucket público.
     const prev = this._uploading.get(cid)
     const p = (prev ? prev.catch(() => {}) : Promise.resolve())
-      .then(() => this.store.upload(cid, meta))
-      .then(() => { this.index.setRemote(cid, true) })
-      .catch((e) => { this.log(`[storage] could not upload ${cid.slice(0, 14)}…: ${e.message}`) })
+      .then(() => upload(cid, meta))
+      .then(() => { this.idx.setRemote(cid, true) })
+      .catch((/** @type {Error} */ e) => { this.log(`[storage] could not upload ${cid.slice(0, 14)}…: ${e.message}`) })
       .finally(() => this._uploading.delete(cid))
     this._uploading.set(cid, p)
     return p
@@ -133,9 +160,9 @@ export class ContentNode {
    */
   async backupPending (limit = 100) {
     if (!this.store.backed) return { pending: 0 }
-    const rows = this.index.pendingUpload(limit)
+    const rows = this.idx.pendingUpload(limit)
     for (const r of rows) {
-      const m = this.index.get(r.cid)
+      const m = this.idx.get(r.cid)
       if (m) await this.backup(r.cid, { size: m.size, mime: m.mime, public: m.acl === 'public' })
     }
     return { pending: rows.length }
@@ -145,19 +172,28 @@ export class ContentNode {
    * Metadatos de presentación (nombre/título/descripción). Es lo único con lo que
    * el permalink público arma su tarjeta (DISENO.md §7.3): sin esto una vista
    * previa solo puede decir el tipo y el tamaño.
+   * @param {string} cid
+   * @param {BlobMeta | null} meta
    */
   setMeta (cid, meta) {
-    return this.index.setMeta(cid, meta)
+    return this.idx.setMeta(cid, meta)
   }
 
-  /** Enlaza la miniatura pública de un blob (la genera la app, no el node). */
+  /**
+   * Enlaza la miniatura pública de un blob (la genera la app, no el node).
+   * @param {string} cid
+   * @param {string} thumbnailCid
+   */
   setThumbnail (cid, thumbnailCid) {
-    return this.index.setThumbnail(cid, thumbnailCid)
+    return this.idx.setThumbnail(cid, thumbnailCid)
   }
 
-  /** Índice de lo servible al mundo (público y en claro). */
+  /**
+   * Índice de lo servible al mundo (público y en claro).
+   * @param {{ limit?: number, offset?: number }} [opts]
+   */
   listPublic (opts) {
-    return this.index.listPublic(opts)
+    return this.idx.listPublic(opts)
   }
 
   /**
@@ -165,7 +201,8 @@ export class ContentNode {
    * dos se comprueban aquí —en el único sitio por donde salen los bytes— aunque
    * `ops.acl` ya impida marcar público lo cifrado: un índice traído de otra
    * versión, o tocado a mano, no debe poder abrir una puerta.
-   * @returns {any|null} los metadatos si es servible, null si no.
+   * @param {string} cid
+   * @returns {BlobRow | null} los metadatos si es servible, null si no.
    */
   publicStat (cid) {
     const meta = this.stat(cid)
@@ -179,33 +216,41 @@ export class ContentNode {
    * Anota el acceso (`lastRead`), que es lo que ordena el desalojo de la caché
    * (§15.11): sin esto, el GC tira lo más antiguo, y lo antiguo y muy pedido es
    * justo lo que hay que conservar.
+   * @param {string} cid
+   * @param {import('./types.js').ByteRange | null} [range]
    */
   read (cid, range) {
-    this.index.touch(cid)
+    this.idx.touch(cid)
     return this.store.read(cid, range)
   }
 
+  /** @param {string} cid */
   async remove (cid) {
     await this.store.remove(cid)
-    this.index.remove(cid)
+    this.idx.remove(cid)
   }
 
+  /** @param {string | null} [tag] */
   list (tag = null) {
-    return this.index.list(tag)
+    return this.idx.list(tag)
   }
 
+  /**
+   * @param {string} cid
+   * @param {boolean} [pinned]
+   */
   pin (cid, pinned = true) {
-    return this.index.setPinned(cid, pinned)
+    return this.idx.setPinned(cid, pinned)
   }
 
   stats () {
-    const cached = this.index.cachedBytes()
+    const cached = this.idx.cachedBytes()
     return {
-      blobs: this.index.count(),
+      blobs: this.idx.count(),
       // `bytes` es lo que ocupa el disco (lo que mira la cuota); `totalBytes` es
       // el inventario entero, que con bucket es mayor porque incluye lo desalojado.
       bytes: cached,
-      totalBytes: this.index.totalBytes(),
+      totalBytes: this.idx.totalBytes(),
       maxBytes: this.maxBytes || null,
       backed: this.store.backed === true,
       dir: this.dir,
@@ -238,21 +283,23 @@ export class ContentNode {
     let freed = 0
     const backed = this.store.backed === true
 
+    /** @param {{ cid: string, size: number }} b */
     const destroy = ({ cid, size }) => {
-      this.index.remove(cid)
+      this.idx.remove(cid)
       this.store.remove(cid).catch(() => {})
       freed += size
     }
+    /** @param {{ cid: string, size: number }} b */
     const evict = ({ cid, size }) => {
       if (!backed) return destroy({ cid, size })
       this.store.evict(cid).catch(() => {})
-      this.index.setCached(cid, false)
+      this.idx.setCached(cid, false)
       freed += size
     }
 
-    for (const b of this.index.expired(now)) destroy(b)
+    for (const b of this.idx.expired(now)) destroy(b)
     if (needBytes > freed) {
-      for (const b of this.index.evictable({ requireRemote: backed })) {
+      for (const b of this.idx.evictable({ requireRemote: backed })) {
         if (freed >= needBytes) break
         evict(b)
       }

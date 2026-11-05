@@ -86,6 +86,7 @@ export async function enrollToVault (qr, { dir = serviceDir(), onCode, onReplace
 export function startVaultConfig ({ dir = serviceDir(), onSecrets, log = console.log, onChange, firstWaitMs = 20000 } = {}) {
   if (!isEnrolled(dir)) return { enabled: false, ready: Promise.resolve(null), close () {} }
   let stopped = false
+  /** @type {{ stop: () => void } | null} */
   let watcher = null
   /** @type {(v:any)=>void} */
   let arrive = () => {}
@@ -110,7 +111,7 @@ export function startVaultConfig ({ dir = serviceDir(), onSecrets, log = console
     const secrets = await waitForSecrets({
       dir,
       ns: NS,
-      onRetry: (e, delay) => log(`[vault] no config yet (${e.message}); retrying in ${Math.round(delay / 1000)}s`)
+      onRetry: (/** @type {Error} */ e, /** @type {number} */ delay) => log(`[vault] no config yet (${e.message}); retrying in ${Math.round(delay / 1000)}s`)
     })
     if (stopped) return
 
@@ -155,7 +156,8 @@ export function startVaultConfig ({ dir = serviceDir(), onSecrets, log = console
     enabled: true,
     /** Resuelve con la configuración, o con `null` si venció el plazo o falló. */
     ready,
-    close () { stopped = true; clearTimeout(deadline); try { watcher?.close?.() } catch (_) {} }
+    // `watchEnv` devuelve `{ stop }`: el `close?.()` de antes no existía y la vigilancia seguía viva.
+    close () { stopped = true; clearTimeout(deadline); try { watcher?.stop() } catch (_) {} }
   }
 }
 

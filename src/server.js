@@ -18,6 +18,7 @@ import { parseRange } from './range.js'
 
 export { parseRange }
 
+/** @type {(res: import('node:http').ServerResponse, code: number, obj: unknown) => void} */
 const json = (res, code, obj) => {
   const body = JSON.stringify(obj)
   res.writeHead(code, { 'content-type': 'application/json' }).end(body)
@@ -31,7 +32,8 @@ export function createServer (node) {
   return http.createServer(async (req, res) => {
     try {
       await route(node, req, res)
-    } catch (err) {
+    } catch (caught) {
+      const err = /** @type {Error & { code?: string }} */ (caught)
       if (res.headersSent) { res.destroy(); return }
       if (err.code === 'ETOOBIG') return json(res, 413, { error: 'blob too large' })
       if (err.code === 'ENOSPC') return json(res, 507, { error: 'disk quota exceeded' })
@@ -40,8 +42,14 @@ export function createServer (node) {
   })
 }
 
+/**
+ * @param {import('./node.js').ContentNode} node
+ * @param {import('node:http').IncomingMessage} req
+ * @param {import('node:http').ServerResponse} res
+ */
 async function route (node, req, res) {
-  const url = new URL(req.url, 'http://localhost')
+  // Un servidor http siempre trae `url` en la petición; el tipo lo deja opcional por los clientes.
+  const url = new URL(/** @type {string} */ (req.url), 'http://localhost')
   const [, top, cid] = url.pathname.split('/')
 
   if (req.method === 'POST' && top === 'c' && !cid) {
@@ -67,6 +75,7 @@ async function route (node, req, res) {
       return json(res, 405, { error: 'method not allowed' })
     }
 
+    /** @type {Record<string, string | number>} */
     const headers = {
       'content-type': meta.mime,
       etag: `"${cid}"`,

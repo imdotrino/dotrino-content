@@ -32,6 +32,7 @@ import { S3Bucket, S3Error } from './s3.js'
 const IMMUTABLE = 'public, max-age=31536000, immutable'
 
 /** Del `cid` a la clave del objeto. Sin prefijos: el bucket ya separa público de privado. */
+/** @param {string} cid */
 const keyOf = (cid) => {
   if (!isValidCid(cid)) throw new Error(`invalid cid: ${cid}`)
   return cid
@@ -60,21 +61,34 @@ export class S3BlobStore {
     return this
   }
 
-  /** El bucket que le toca a un blob según su ACL. */
+  /**
+   * El bucket que le toca a un blob según su ACL.
+   * @param {boolean} isPublic
+   * @returns {S3Bucket}
+   */
   bucketFor (isPublic) {
     if (!isPublic) return this.priv
     if (!this.pub) throw new Error('this node has no public bucket (CONTENT_S3_BUCKET_PUBLIC)')
     return this.pub
   }
 
-  /** La URL pública de un blob, o `null` si este node no publica por bucket. */
+  /**
+   * La URL pública de un blob, o `null` si este node no publica por bucket.
+   * @param {string} cid
+   * @param {string | null} baseUrl
+   */
   urlFor (cid, baseUrl) {
     return baseUrl ? `${String(baseUrl).replace(/\/+$/, '')}/${keyOf(cid)}` : null
   }
 
+  /** @param {string} cid */
   pathFor (cid) { return this.cache.pathFor(cid) }
 
-  /** Guarda en la caché. La subida al bucket la lanza el node después (`upload`). */
+  /**
+   * Guarda en la caché. La subida al bucket la lanza el node después (`upload`).
+   * @param {import('node:stream').Readable} readable
+   * @param {{ maxBytes?: number }} [opts]
+   */
   async put (readable, opts) {
     return this.cache.put(readable, opts)
   }
@@ -100,7 +114,10 @@ export class S3BlobStore {
     return { cid, remote: true }
   }
 
-  /** ¿Está en la caché de esta máquina? (no pregunta al bucket: eso cuesta una petición) */
+  /**
+   * ¿Está en la caché de esta máquina? (no pregunta al bucket: eso cuesta una petición)
+   * @param {string} cid
+   */
   async sizeOf (cid) {
     return this.cache.sizeOf(cid)
   }
@@ -112,7 +129,7 @@ export class S3BlobStore {
    * Devuelve un stream, como el de disco, para que quien llama no cambie.
    *
    * @param {string} cid
-   * @param {{ start: number, end: number }} [range] inclusivo
+   * @param {{ start: number, end: number } | null} [range] inclusivo
    * @param {{ public?: boolean }} [opts] de qué bucket, si hay que ir a buscarlo
    */
   read (cid, range, { public: isPublic = false } = {}) {
@@ -147,6 +164,9 @@ export class S3BlobStore {
    * Los primeros `n` bytes. Es lo que necesita el puerto público para comprobar el tipo
    * REAL de una imagen por sus bytes mágicos (§7.2) — y existe en la interfaz porque
    * con bucket detrás no hay ninguna ruta de disco que abrir.
+   * @param {string} cid
+   * @param {number} n
+   * @param {{ public?: boolean }} [opts]
    */
   async readHead (cid, n, { public: isPublic = false } = {}) {
     const local = await this.cache.sizeOf(cid)
@@ -154,12 +174,19 @@ export class S3BlobStore {
     return this.bucketFor(isPublic).head(keyOf(cid), n)
   }
 
-  /** Suelta la copia local y deja la del bucket (desalojar, §15.11). */
+  /**
+   * Suelta la copia local y deja la del bucket (desalojar, §15.11).
+   * @param {string} cid
+   */
   async evict (cid) {
     await this.cache.remove(cid)
   }
 
-  /** Borra de verdad: de la caché y del bucket. Caducar y despublicar pasan por aquí. */
+  /**
+   * Borra de verdad: de la caché y del bucket. Caducar y despublicar pasan por aquí.
+   * @param {string} cid
+   * @param {{ public?: boolean | null }} [opts]
+   */
   async remove (cid, { public: isPublic = null } = {}) {
     await this.cache.remove(cid)
     // Sin saber su ACL se borra de los dos: es idempotente y borrar lo que no está no

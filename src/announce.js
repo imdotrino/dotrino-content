@@ -60,7 +60,7 @@ export const FAILURES_BEFORE_ERROR = 4
  * siguiente tic lo vuelve a intentar. Un anuncio perdido no rompe nada; lo único
  * que pasa es que un tercero no lo encuentra hasta que vuelva.
  *
- * @param {{ client: any, owner: string, quiet?: boolean, intervalMs?: number, retryMs?: number }} opts
+ * @param {{ client: import('./types.js').ProxyLike, owner: string, quiet?: boolean, intervalMs?: number, retryMs?: number }} opts
  *   client: el `WebSocketProxyClient` YA conectado del agente (`ra.client`) — no se
  *   abre otro: dos conexiones del mismo aparato son dos identidades de transporte.
  * @returns {{ channels: () => string[], close: () => void }}
@@ -70,7 +70,9 @@ export function startAnnounce ({ client, owner, quiet = false, intervalMs = REPU
   if (!owner) throw new Error('startAnnounce: owner is required')
 
   let stopped = false
+  /** @type {string[]} */
   let current = []
+  /** @type {ReturnType<typeof setTimeout> | null} */
   let retry = null
   const failures = new Map()   // canal → fallos seguidos
 
@@ -82,8 +84,9 @@ export function startAnnounce ({ client, owner, quiet = false, intervalMs = REPU
 
   async function publishAll () {
     if (stopped) return
-    const names = targets().map((n) => channelFor(n, owner))
+    const names = targets().map((/** @type {string} */ n) => channelFor(n, owner))
     if (!names.length) return          // aún sin `connected`: el próximo tic
+    /** @type {string[]} */
     const done = []
     for (const name of names) {
       try {
@@ -92,7 +95,8 @@ export function startAnnounce ({ client, owner, quiet = false, intervalMs = REPU
         const antes = failures.get(name) || 0
         failures.delete(name)
         if (antes >= FAILURES_BEFORE_ERROR && !quiet) console.log(`[content] announce on ${name} works again`)
-      } catch (e) {
+      } catch (caught) {
+        const e = /** @type {Error} */ (caught)
         const n = (failures.get(name) || 0) + 1
         failures.set(name, n)
         if (quiet) continue

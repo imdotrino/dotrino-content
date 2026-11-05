@@ -6,6 +6,20 @@
 import { DatabaseSync } from 'node:sqlite'
 import path from 'node:path'
 
+/** @typedef {import('./types.js').BlobRow} BlobRow */
+
+/**
+ * La primera fila de una consulta que siempre devuelve una (un agregado `AS n`).
+ * @param {import('node:sqlite').StatementSync} stmt
+ * @param {...import('node:sqlite').SQLInputValue} args
+ * @returns {number}
+ */
+const scalar = (stmt, ...args) => {
+  const row = stmt.get(...args)
+  if (!row) throw new Error('index: an aggregate query returned no row')
+  return Number(row.n)
+}
+
 export class Index {
   /** @param {string} root directorio raíz de datos */
   constructor (root) {
@@ -63,6 +77,7 @@ export class Index {
     this.db.exec('CREATE INDEX IF NOT EXISTS idx_blobs_evict ON blobs (pinned, cached, remote, lastRead)')
   }
 
+  /** @param {import('./types.js').UpsertInput} b */
   upsert ({ cid, size, mime, owner = null, enc = 0, acl = null, ttl = null, meta = null, tag = null }) {
     this.db.prepare(`
       INSERT INTO blobs (cid, size, mime, createdAt, owner, enc, acl, ttl, meta, tag)
@@ -76,30 +91,45 @@ export class Index {
     `).run(cid, size, mime, Date.now(), owner, enc ? 1 : 0, acl, ttl, meta ? JSON.stringify(meta) : null, tag)
   }
 
+  /**
+   * @param {string} cid
+   * @returns {BlobRow | null}
+   */
   get (cid) {
-    return this.db.prepare('SELECT * FROM blobs WHERE cid = ?').get(cid) ?? null
+    return /** @type {BlobRow | undefined} */ (this.db.prepare('SELECT * FROM blobs WHERE cid = ?').get(cid)) ?? null
   }
 
+  /**
+   * @param {string | null} [tag]
+   * @returns {import('./types.js').BlobListRow[]}
+   */
   list (tag = null) {
     const cols = 'cid, size, mime, createdAt, owner, enc, acl, ttl, pinned, meta, tag'
-    if (tag) return this.db.prepare(`SELECT ${cols} FROM blobs WHERE tag = ? ORDER BY createdAt DESC`).all(tag)
-    return this.db.prepare(`SELECT ${cols} FROM blobs ORDER BY createdAt DESC`).all()
+    if (tag) return /** @type {import('./types.js').BlobListRow[]} */ (this.db.prepare(`SELECT ${cols} FROM blobs WHERE tag = ? ORDER BY createdAt DESC`).all(tag))
+    return /** @type {import('./types.js').BlobListRow[]} */ (this.db.prepare(`SELECT ${cols} FROM blobs ORDER BY createdAt DESC`).all())
   }
 
   /**
    * Cambia el `acl` de un blob (`public` | `private`). Devuelve false si no existe.
    * Se cambia aparte del `upsert` a propósito: volver a subir los mismos bytes NO
    * debe reabrir ni cerrar un blob por accidente.
+   * @param {string} cid
+   * @param {string | null} acl
    */
   setAcl (cid, acl) {
     const { changes } = this.db.prepare('UPDATE blobs SET acl = ? WHERE cid = ?').run(acl, cid)
     return changes > 0
   }
 
+  /** @param {string} cid */
   remove (cid) {
     this.db.prepare('DELETE FROM blobs WHERE cid = ?').run(cid)
   }
 
+  /**
+   * @param {string} cid
+   * @param {boolean} pinned
+   */
   setPinned (cid, pinned) {
     const { changes } = this.db.prepare('UPDATE blobs SET pinned = ? WHERE cid = ?')
       .run(pinned ? 1 : 0, cid)
@@ -108,12 +138,12 @@ export class Index {
 
   /** Suma de bytes indexados. @returns {number} */
   totalBytes () {
-    return Number(this.db.prepare('SELECT COALESCE(SUM(size), 0) AS n FROM blobs').get().n)
+    return scalar(this.db.prepare('SELECT COALESCE(SUM(size), 0) AS n FROM blobs'))
   }
 
   /** @returns {number} */
   count () {
-    return Number(this.db.prepare('SELECT COUNT(*) AS n FROM blobs').get().n)
+    return scalar(this.db.prepare('SELECT COUNT(*) AS n FROM blobs'))
   }
 
   /**
@@ -144,21 +174,33 @@ export class Index {
     `).all())
   }
 
-  /** Marca que estos bytes ya están confirmados en el bucket. */
+  /**
+   * Marca que estos bytes ya están confirmados en el bucket.
+   * @param {string} cid
+   * @param {boolean} [remote]
+   */
   setRemote (cid, remote = true) {
     const { changes } = this.db.prepare('UPDATE blobs SET remote = ? WHERE cid = ?')
       .run(remote ? 1 : 0, cid)
     return changes > 0
   }
 
-  /** Marca si los bytes están (o ya no) en el disco de esta máquina. */
+  /**
+   * Marca si los bytes están (o ya no) en el disco de esta máquina.
+   * @param {string} cid
+   * @param {boolean} [cached]
+   */
   setCached (cid, cached = true) {
     const { changes } = this.db.prepare('UPDATE blobs SET cached = ? WHERE cid = ?')
       .run(cached ? 1 : 0, cid)
     return changes > 0
   }
 
-  /** Anota que este blob se acaba de leer (es lo que ordena el desalojo). */
+  /**
+   * Anota que este blob se acaba de leer (es lo que ordena el desalojo).
+   * @param {string} cid
+   * @param {number} [now]
+   */
   touch (cid, now = Date.now()) {
     this.db.prepare('UPDATE blobs SET lastRead = ? WHERE cid = ?').run(now, cid)
   }
@@ -176,7 +218,7 @@ export class Index {
 
   /** Bytes que ocupan disco AQUÍ (la cuota es de la caché, no del inventario). */
   cachedBytes () {
-    return Number(this.db.prepare('SELECT COALESCE(SUM(size), 0) AS n FROM blobs WHERE cached = 1').get().n)
+    return scalar(this.db.prepare('SELECT COALESCE(SUM(size), 0) AS n FROM blobs WHERE cached = 1'))
   }
 
   /**
@@ -197,6 +239,8 @@ export class Index {
    * Enlaza la MINIATURA de un blob (otro blob, con su propio `cid`). El node no
    * genera miniaturas: las hace la app al subir —el aparato pone el trabajo, que
    * es el patrón del ecosistema— y aquí solo se anota cuál es.
+   * @param {string} cid
+   * @param {string} thumbnailCid
    */
   setThumbnail (cid, thumbnailCid) {
     const { changes } = this.db.prepare('UPDATE blobs SET thumbnailCid = ? WHERE cid = ?')
@@ -209,12 +253,16 @@ export class Index {
    * por aquí ni marcado público (ops.js ya lo impide al marcarlo, esto es el
    * segundo cerrojo, en el sitio donde los bytes de verdad salen).
    */
+  /**
+   * @param {{ limit?: number, offset?: number }} [opts]
+   * @returns {import('./types.js').PublicRow[]}
+   */
   listPublic ({ limit = 100, offset = 0 } = {}) {
-    return this.db.prepare(`
+    return /** @type {import('./types.js').PublicRow[]} */ (this.db.prepare(`
       SELECT cid, size, mime, createdAt, meta FROM blobs
       WHERE acl = 'public' AND enc = 0
       ORDER BY createdAt DESC LIMIT ? OFFSET ?
-    `).all(limit, offset)
+    `).all(limit, offset))
   }
 
   /**
@@ -231,7 +279,11 @@ export class Index {
     `).run(day, Math.round(bytes))
   }
 
-  /** Bytes servidos ese día. @returns {number} */
+  /**
+   * Bytes servidos ese día.
+   * @param {string} day YYYY-MM-DD
+   * @returns {number}
+   */
   egressOn (day) {
     return Number(this.db.prepare('SELECT COALESCE(bytes, 0) AS n FROM egress WHERE day = ?').get(day)?.n || 0)
   }

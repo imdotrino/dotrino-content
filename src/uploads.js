@@ -17,6 +17,7 @@ import { isValidCid } from './blobstore.js'
 /** Una subida abandonada se borra a la semana: el aparato que la dejó tuvo tiempo de sobra. */
 const ABANDONED_MS = 7 * 24 * 3600 * 1000
 
+/** @type {(code: string, message: string) => Error & { code: string }} */
 const err = (code, message) => Object.assign(new Error(message), { code })
 
 export class Uploads {
@@ -28,9 +29,13 @@ export class Uploads {
     this.open = new Map()
   }
 
+  /**
+   * @param {string} cid
+   * @returns {Promise<number>}
+   */
   async _sizeOnDisk (cid) {
     try { return (await stat(path.join(this.dir, cid))).size } catch (e) {
-      if (e.code === 'ENOENT') return 0
+      if (/** @type {NodeJS.ErrnoException} */ (e).code === 'ENOENT') return 0
       throw e
     }
   }
@@ -38,7 +43,7 @@ export class Uploads {
   async sweep (now = Date.now()) {
     let names
     try { names = await readdir(this.dir) } catch (e) {
-      if (e.code === 'ENOENT') return
+      if (/** @type {NodeJS.ErrnoException} */ (e).code === 'ENOENT') return
       throw e
     }
     for (const n of names) {
@@ -47,7 +52,10 @@ export class Uploads {
     }
   }
 
-  /** @returns {Promise<{existed:true}|{existed:false, at:number}>} */
+  /**
+   * @param {{ cid: unknown, size: number, mime: string, enc: number, tag: string | null }} o  `cid` llega tal cual de la red
+   * @returns {Promise<{existed:true}|{existed:false, at:number}>}
+   */
   async begin ({ cid, size, mime, enc, tag }) {
     if (!isValidCid(cid)) throw err('bad-request', 'cid is not valid')
     if (!Number.isSafeInteger(size) || size <= 0) throw err('bad-request', 'size must be a positive integer')
@@ -63,7 +71,12 @@ export class Uploads {
     return { existed: false, at }
   }
 
-  /** Escribe lo que llega en `at`, que tiene que ser justo donde acabó lo anterior. */
+  /**
+   * Escribe lo que llega en `at`, que tiene que ser justo donde acabó lo anterior.
+   * @param {string} cid
+   * @param {number} at
+   * @param {Buffer} bytes
+   */
   async part (cid, at, bytes) {
     const up = this.open.get(cid)
     if (!up) throw err('unknown-upload', 'no such upload: call up.begin')
@@ -78,7 +91,10 @@ export class Uploads {
     return at + bytes.length
   }
 
-  /** Comprueba el hash y mete el archivo en el node. */
+  /**
+   * Comprueba el hash y mete el archivo en el node.
+   * @param {string} cid
+   */
   async finish (cid) {
     const up = this.open.get(cid)
     if (!up) throw err('unknown-upload', 'no such upload: call up.begin')
@@ -90,7 +106,7 @@ export class Uploads {
       out = await this.node.put(createReadStream(f), { mime: up.mime, enc: up.enc, tag: up.tag })
     } catch (e) {
       // Sin espacio se conserva lo subido: cuando haya sitio no hace falta volver a mandarlo.
-      if (e.code === 'ENOSPC') throw e
+      if (/** @type {NodeJS.ErrnoException} */ (e).code === 'ENOSPC') throw e
       await rm(f, { force: true })
       throw e
     }

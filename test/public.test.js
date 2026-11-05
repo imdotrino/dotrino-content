@@ -81,7 +81,7 @@ test('el tipo lo deciden los BYTES, no lo que dijo quien subió', async () => {
   const html = Buffer.from('<script>alert(1)</script>')
   const { cid } = await put(html, { mime: 'image/png' })
   node.setAcl(cid, 'public')
-  assert.equal(await sniffImage(node.store.pathFor(cid)), null)
+  assert.equal(await sniffImage(node.store, cid), null)
   assert.equal((await fetch(`${base}/c/${cid}`)).status, 404)
 
   // Y un GIF de verdad sale como GIF aunque se haya declarado otra cosa.

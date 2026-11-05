@@ -17,15 +17,33 @@ import { openSegment, plainSize, segmentCount, segmentSpan, SEGMENT_BYTES } from
 
 export const LIBRARY_TAG = 'library'
 
+/**
+ * Una ficha de la biblioteca, ya abierta: la escribe el teléfono que sube (sellada con la
+ * llave de la cuenta) y nombra el archivo cifrado por tramos (`cid`) con su llave.
+ * @typedef {{ id: string, cid: string, key: string, name: string, mime?: string, file?: string,
+ *   createdAt: number, updatedAt: number, manifest: string, durationMs?: number, format?: string }} Card
+ */
+/** @typedef {{ keyring: object[], myPub: string, myEncPrivateKey: import('node:crypto').webcrypto.CryptoKey }} Account */
+/** @typedef {{ card: Card, cipherSize: number, size: number }} Found */
+
+/** @type {(code: string, message: string) => Error & { code: string }} */
 const err = (code, message) => Object.assign(new Error(message), { code })
 
+/**
+ * @param {AsyncIterable<Buffer>} stream
+ * @returns {Promise<Buffer<ArrayBuffer>>}
+ */
 async function collect (stream) {
+  /** @type {Buffer[]} */
   const chunks = []
   for await (const c of stream) chunks.push(c)
   return Buffer.concat(chunks)
 }
 
-/** La llave de cifrado de este aparato, de su identidad de servicio. */
+/**
+ * La llave de cifrado de este aparato, de su identidad de servicio.
+ * @param {string} serviceDir
+ */
 export function loadEncKey (serviceDir) {
   const saved = readServiceIdentity(serviceDir)
   if (!saved) throw err('no-enc-key', `no readable service identity in ${serviceDir}`)
@@ -36,16 +54,22 @@ export function loadEncKey (serviceDir) {
 export class Library {
   /**
    * @param {{ node: import('./node.js').ContentNode,
-   *           account: () => Promise<{ keyring: any[], myPub: string, myEncPrivateKey: CryptoKey }> }} o
+   *           account: () => Promise<Account> }} o
    *   account: el llavero del acta vigente, leído cada vez porque cambia con ella.
    */
   constructor ({ node, account }) {
     this.node = node
     this.account = account
     /** Las fichas ya abiertas: un `cid` no cambia nunca. */
+    /** @type {Map<string, Card>} */
     this._opened = new Map()
   }
 
+  /**
+   * @param {{ cid: string }} blob  la ficha sellada
+   * @param {Account} account
+   * @returns {Promise<Card>}
+   */
   async _open (blob, account) {
     const hit = this._opened.get(blob.cid)
     if (hit) return hit
@@ -59,11 +83,13 @@ export class Library {
   /**
    * Lo que hay. Una ficha que no abre NO se esconde: va en `problems`, porque esconderla sería
    * decirle al dueño que su grabación no existe.
-   * @returns {Promise<{ items: any[], problems: {cid:string, error:string}[] }>}
+   * @returns {Promise<{ items: (Omit<Card, 'key'> & { size: number })[], problems: {cid:string, error:string}[] }>}
    */
   async list () {
     const account = await this.account()
+    /** @type {Map<string, Card>} */
     const latest = new Map()
+    /** @type {{ cid: string, error: string }[]} */
     const problems = []
     for (const blob of this.node.list(LIBRARY_TAG)) {
       try {
@@ -71,9 +97,10 @@ export class Library {
         const prev = latest.get(card.id)
         if (!prev || card.updatedAt > prev.updatedAt) latest.set(card.id, card)
       } catch (e) {
-        problems.push({ cid: blob.cid, error: e.message })
+        problems.push({ cid: blob.cid, error: /** @type {Error} */ (e).message })
       }
     }
+    /** @type {(Omit<Card, 'key'> & { size: number })[]} */
     const items = []
     for (const card of latest.values()) {
       const st = this.node.stat(card.cid)
@@ -85,8 +112,13 @@ export class Library {
     return { items, problems }
   }
 
+  /**
+   * @param {string} id
+   * @returns {Promise<Found>}
+   */
   async find (id) {
     const account = await this.account()
+    /** @type {Card | null} */
     let found = null
     for (const blob of this.node.list(LIBRARY_TAG)) {
       const card = await this._open(blob, account).catch(() => null)
@@ -98,7 +130,12 @@ export class Library {
     return { card: found, cipherSize: st.size, size: plainSize(st.size) }
   }
 
-  /** Los bytes en claro de [start, end], tramo a tramo: un archivo de 1 GB no entra entero en memoria. */
+  /**
+   * Los bytes en claro de [start, end], tramo a tramo: un archivo de 1 GB no entra entero en memoria.
+   * @param {Found} found
+   * @param {number} [start]
+   * @param {number} [end]
+   */
   stream ({ card, cipherSize, size }, start = 0, end = size - 1) {
     const { node } = this
     const key = Buffer.from(card.key, 'base64')
@@ -115,7 +152,10 @@ export class Library {
     return Readable.from(gen(), { objectMode: false })
   }
 
-  /** Borra el archivo y todas sus fichas de este node (cada ficha vieja pudo nombrar el suyo). El teléfono conserva su copia. */
+  /**
+   * Borra el archivo y todas sus fichas de este node (cada ficha vieja pudo nombrar el suyo). El teléfono conserva su copia.
+   * @param {string} id
+   */
   async remove (id) {
     await this.find(id)
     const account = await this.account()

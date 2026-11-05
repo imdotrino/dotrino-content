@@ -1,4 +1,11 @@
 // La ventana de la biblioteca: lista, reproduce, abre con otro programa, guarda y borra.
+/**
+ * Un elemento de la biblioteca, como lo da `/api/library` (src/library.js).
+ * @typedef {{ id: string, name: string, createdAt: number, durationMs?: number, size: number, format?: string }} Item
+ */
+/** @typedef {'es' | 'en'} Lang */
+/** @typedef {keyof typeof TEXT.es} TextKey */
+
 const TEXT = {
   es: {
     empty: 'Todavía no hay nada aquí. Lo que subas desde la Grabadora aparecerá en esta lista.',
@@ -16,24 +23,47 @@ const TEXT = {
   }
 }
 const stored = () => { try { return localStorage.getItem('dotrino-lang') } catch (_) { return null } }
-let lang = stored() || (navigator.language.startsWith('es') ? 'es' : 'en')
-if (!TEXT[lang]) lang = 'en'
-const t = (k, v = {}) => TEXT[lang][k].replace(/\{(\w+)\}/g, (_, x) => v[x])
+/** @param {unknown} l @returns {l is Lang} */
+const isLang = (l) => l === 'es' || l === 'en'
+const saved = stored() || (navigator.language.startsWith('es') ? 'es' : 'en')
+/** @type {Lang} */
+let lang = isLang(saved) ? saved : 'en'
+/**
+ * @param {TextKey} k
+ * @param {Record<string, unknown>} [v]
+ */
+const t = (k, v = {}) => TEXT[lang][k].replace(/\{(\w+)\}/g, (_, x) => String(v[x]))
 
-const $ = (id) => document.getElementById(id)
+/**
+ * Un elemento de la página (index.html los trae todos).
+ * @param {string} id
+ * @returns {HTMLElement}
+ */
+const $ = (id) => {
+  const el = document.getElementById(id)
+  if (!el) throw new Error(`the page has no #${id}`)
+  return el
+}
+const audio = () => /** @type {HTMLAudioElement} */ ($('audio'))
+/** @type {Item[]} */
 let items = []
+/** @type {{ error: string }[]} */
 let problems = []
+/** @type {string | null} */
 let playing = null
 
+/** @param {string} text */
 const showError = (text) => { $('msg').textContent = text; $('msg').hidden = !text }
 
+/** @param {number} n */
 function fmtSize (n) {
   if (n >= 1e9) return (n / 1e9).toFixed(2) + ' GB'
   if (n >= 1e6) return (n / 1e6).toFixed(1) + ' MB'
   return Math.ceil(n / 1e3) + ' KB'
 }
+/** @param {number | undefined} ms */
 function fmtTime (ms) {
-  if (!(ms >= 0)) return t('unknown')
+  if (ms === undefined || !(ms >= 0)) return t('unknown')
   const s = Math.round(ms / 1000)
   const h = Math.floor(s / 3600)
   const m = String(Math.floor(s / 60) % 60)
@@ -41,6 +71,12 @@ function fmtTime (ms) {
   return h ? `${h}:${m.padStart(2, '0')}:${ss}` : `${m}:${ss}`
 }
 
+/**
+ * @param {string} label
+ * @param {string} cls
+ * @param {string} testid
+ * @param {() => unknown} fn
+ */
 function button (label, cls, testid, fn) {
   const b = document.createElement('button')
   b.textContent = label
@@ -50,15 +86,21 @@ function button (label, cls, testid, fn) {
   return b
 }
 
+/** @param {Item} it */
 function play (it) {
   playing = it.id
   $('player').hidden = false
   $('now').textContent = it.name
-  $('audio').src = `/media/${encodeURIComponent(it.id)}`
-  $('audio').play().catch((e) => { if (e.name !== 'AbortError') showError(t('openFail', { e: e.message })) })
+  audio().src = `/media/${encodeURIComponent(it.id)}`
+  audio().play().catch((e) => { if (e.name !== 'AbortError') showError(t('openFail', { e: e.message })) })
   render()
 }
 
+/**
+ * @param {string} path
+ * @param {string} method
+ * @param {TextKey} failKey
+ */
 async function call (path, method, failKey) {
   showError('')
   const res = await fetch(path, { method })
@@ -68,6 +110,7 @@ async function call (path, method, failKey) {
   return false
 }
 
+/** @param {Item} it */
 function row (it) {
   const el = document.createElement('div')
   el.className = 'row' + (it.id === playing ? ' on' : '')
@@ -90,7 +133,7 @@ function row (it) {
   save.dataset.testid = 'save'
   const del = button(t('remove'), 'danger', 'remove', async () => {
     if (del.dataset.armed !== '1') { del.dataset.armed = '1'; del.textContent = t('confirm'); return }
-    if (it.id === playing) { $('audio').pause(); $('audio').removeAttribute('src'); $('player').hidden = true; playing = null }
+    if (it.id === playing) { audio().pause(); audio().removeAttribute('src'); $('player').hidden = true; playing = null }
     if (await call(`/api/${encodeURIComponent(it.id)}`, 'DELETE', 'removeFail')) await load()
   })
   acts.append(
@@ -117,9 +160,12 @@ async function load () {
   render()
 }
 
-document.querySelector('dotrino-topbar').addEventListener('dotrino-lang', (e) => {
-  const next = e.detail?.lang || e.detail
-  if (TEXT[next]) { lang = next; document.documentElement.lang = next; render() }
+const topbar = document.querySelector('dotrino-topbar')
+if (!topbar) throw new Error('the page has no <dotrino-topbar>')
+topbar.addEventListener('dotrino-lang', (e) => {
+  const detail = /** @type {CustomEvent<{ lang?: string } | string>} */ (e).detail
+  const next = (typeof detail === 'object' && detail?.lang) || detail
+  if (isLang(next)) { lang = next; document.documentElement.lang = next; render() }
 })
 document.documentElement.lang = lang
 load()

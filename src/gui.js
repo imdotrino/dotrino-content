@@ -22,6 +22,7 @@ import { parseRange } from './range.js'
 
 export const DEFAULT_GUI_PORT = 3779
 const COOKIE = 'dotrino_content_gui'
+/** @type {Record<string, [string, string]>} */
 const ASSETS = {
   '/': ['index.html', 'text/html; charset=utf-8'],
   '/app.js': ['app.js', 'text/javascript; charset=utf-8']
@@ -30,12 +31,16 @@ const CDN = 'https://cdn.jsdelivr.net'
 const CSP = `default-src 'none'; script-src 'self' ${CDN}; style-src 'self' 'unsafe-inline' ${CDN}; font-src ${CDN} data:; ` +
   `img-src 'self' data: ${CDN}; media-src 'self'; connect-src 'self' ${CDN}; frame-src https://store.dotrino.com https://id.dotrino.com; base-uri 'none'; frame-ancestors 'none'; form-action 'none'`
 
+/** @type {(a: unknown, b: unknown) => boolean} */
 const same = (a, b) => {
   const x = Buffer.from(String(a)); const y = Buffer.from(String(b))
   return x.length === y.length && timingSafeEqual(x, y)
 }
 
-/** El nombre del archivo: sale de la ficha, así que no se deja que salte de carpeta. */
+/**
+ * El nombre del archivo: sale de la ficha, así que no se deja que salte de carpeta.
+ * @param {{ file?: unknown, name?: unknown, id?: unknown }} card
+ */
 export function safeFileName (card) {
   const ext = path.extname(String(card.file || '')).replace(/[^.a-z0-9]/gi, '')
   const base = String(card.name || card.id).replace(/[/\\\0-\x1f<>:"|?*]/g, ' ').replace(/^\.+/, '').trim().slice(0, 120)
@@ -45,6 +50,10 @@ export function safeFileName (card) {
 /** Dónde dejar la copia para abrirla con otro programa: en memoria si el sistema lo permite. */
 const openDir = () => path.join(process.env.XDG_RUNTIME_DIR || os.tmpdir(), `dotrino-content-open-${process.getuid?.() ?? 'u'}`)
 
+/**
+ * @param {string} file
+ * @returns {[string, string[]]}
+ */
 function launcher (file) {
   if (process.platform === 'darwin') return ['open', [file]]
   if (process.platform === 'win32') return ['explorer.exe', [file]]
@@ -62,21 +71,28 @@ export function createGui ({ library, port, tokenFile, openFile }) {
   const origins = new Set([...hosts].map((h) => `http://${h}`))
   const assets = new URL('./gui/', import.meta.url)
 
+  /** @type {(res: import('node:http').ServerResponse, code: number, obj: object) => import('node:http').ServerResponse} */
   const json = (res, code, obj) => res.writeHead(code, { 'content-type': 'application/json' }).end(JSON.stringify(obj))
+  /** @param {import('node:http').IncomingMessage} req */
   const authed = (req) => {
     const m = (req.headers.cookie || '').match(new RegExp(`(?:^|; )${COOKIE}=([^;]+)`))
     return !!m && same(m[1], token)
   }
-  const launch = openFile || ((f) => {
+  const launch = openFile || ((/** @type {string} */ f) => {
     const [cmd, args] = launcher(f)
     const child = spawn(cmd, args, { detached: true, stdio: 'ignore' })
     child.on('error', (e) => console.error(`[gui] could not open the file: ${e.message}`))
     child.unref()
   })
 
+  /**
+   * @param {import('node:http').IncomingMessage} req
+   * @param {import('node:http').ServerResponse} res
+   */
   async function route (req, res) {
     if (!hosts.has(req.headers.host || '')) return json(res, 403, { code: 'bad-host' })
-    const url = new URL(req.url, `http://${req.headers.host}`)
+    // Un servidor http siempre trae `url` en la petición; el tipo lo deja opcional por los clientes.
+    const url = new URL(/** @type {string} */ (req.url), `http://${req.headers.host}`)
     const parts = url.pathname.split('/').filter(Boolean)
 
     if (req.method === 'GET' && url.pathname === '/' && url.searchParams.has('t')) {
@@ -105,6 +121,7 @@ export function createGui ({ library, port, tokenFile, openFile }) {
 
     if (parts[0] === 'media' && parts[1] && (req.method === 'GET' || req.method === 'HEAD')) {
       const item = await library.find(decodeURIComponent(parts[1]))
+      /** @type {Record<string, string | number>} */
       const headers = {
         'content-type': item.card.mime || 'application/octet-stream',
         'accept-ranges': 'bytes',
@@ -144,7 +161,7 @@ export function createGui ({ library, port, tokenFile, openFile }) {
   }
 
   const server = http.createServer((req, res) => {
-    route(req, res).catch((e) => {
+    route(req, res).catch((/** @type {Error & { code?: string }} */ e) => {
       if (res.headersSent) { res.destroy(); return }
       json(res, e?.code === 'not-found' ? 404 : 500, { code: e?.code || 'failed', error: e?.message })
     })

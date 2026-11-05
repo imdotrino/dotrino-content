@@ -38,20 +38,24 @@ export const REPO = 'imdotrino/dotrino-content'
  *   restart: salir limpio para que systemd/pm2 levante la versión nueva.
  */
 export function startSelfUpdate ({ version, dir, conn = null, restart, log = console.log, watch = watchSelfUpdateNpm, hooks = vaultUpdateHooks }) {
-  // Los ganchos son de la librería de la bóveda; aquí solo se arman con la identidad de AHORA.
-  const now = () => hooks({ product: PKG, log, ...conn() })
+  /**
+   * Los ganchos son de la librería de la bóveda; aquí solo se arman con la identidad de AHORA.
+   * @param {() => object} c
+   */
+  const hooksWith = (c) => {
+    const now = () => hooks({ product: PKG, log, ...c() })
+    return {
+      mayUpdate: (/** @type {{ version: string, from?: string }} */ u) => now().mayUpdate(u),
+      onUpdated: (/** @type {{ version: string, from?: string }} */ u) => now().onUpdated(u),
+      onNeedsRoot: (/** @type {{ version: string, from?: string }} */ u) => now().onNeedsRoot(u)
+    }
+  }
   return watch({
     pkg: PKG,
     current: version,
     repo: REPO,
     dir,
-    ...(conn
-      ? {
-          mayUpdate: (u) => now().mayUpdate(u),
-          onUpdated: (u) => now().onUpdated(u),
-          onNeedsRoot: (u) => now().onNeedsRoot(u)
-        }
-      : {}),
+    ...(conn ? hooksWith(conn) : {}),
     onInstalled: ({ version: to, restart: canRestart }) => {
       if (canRestart) {
         log(`[update] ${PKG} ${to} installed · restarting to run it`)

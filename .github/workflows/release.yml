@@ -40,6 +40,8 @@ jobs:
 
       # LAS PRUEBAS ANTES DE PUBLICAR. Una versión que no pasa su suite no llega a npm.
       - run: npm test
+      # Y LOS TIPOS (strict): el node, el cliente de navegador (lib/) y la ventana (src/gui).
+      - run: npm run type-check
       # El registro de compatibilidad (dotrino-roadmap, CONVENCIONES §14): nada instalado en
       # una versión marcada rota ni por debajo de lo que exige la ficha. Con @latest, que trae
       # la lista de rotas más nueva. Va antes de publicar: aquí sí frena.

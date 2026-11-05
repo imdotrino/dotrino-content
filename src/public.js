@@ -58,6 +58,7 @@ export const DEFAULT_RATE_PER_MIN = 60
  * lleva su firma en los primeros bytes, porque el `mime` del índice es lo que
  * DIJO quien subió, y aquí no se cree nada que no se pueda comprobar.
  */
+/** @type {{ mime: string, test: (b: Buffer) => boolean }[]} */
 const IMAGE_TYPES = [
   { mime: 'image/jpeg', test: (b) => b[0] === 0xff && b[1] === 0xd8 && b[2] === 0xff },
   { mime: 'image/png', test: (b) => b[0] === 0x89 && b[1] === 0x50 && b[2] === 0x4e && b[3] === 0x47 },
@@ -74,7 +75,7 @@ export const PUBLIC_MIMES = Object.freeze(IMAGE_TYPES.map((t) => t.mime))
  * El tipo REAL a partir de los primeros bytes, o `null` si no es una imagen de las
  * admitidas. Es lo que se sirve como `content-type`: si alguien subió un HTML diciendo
  * que era un PNG, aquí no pasa.
- * @param {Buffer|Uint8Array|null} buf
+ * @param {Buffer|null} buf
  * @returns {string|null}
  */
 export function sniffBytes (buf) {
@@ -89,9 +90,9 @@ export function sniffBytes (buf) {
  * al disco: con un bucket detrás (§15) no hay ninguna ruta que abrir y el puerto
  * público se habría quedado sin poder comprobar nada — o, peor, comprobándolo solo
  * cuando el blob estuviera en la caché.
- * @param {{ readHead: (cid: string, n: number, opts?: any) => Promise<Buffer|Uint8Array> }} store
+ * @param {{ readHead: (cid: string, n: number, opts?: { public?: boolean }) => Promise<Buffer> }} store
  * @param {string} cid
- * @param {any} [opts]
+ * @param {{ public?: boolean }} [opts]
  * @returns {Promise<string|null>}
  */
 export async function sniffImage (store, cid, opts) {
@@ -102,16 +103,25 @@ export async function sniffImage (store, cid, opts) {
   }
 }
 
-/** Día UTC (clave del techo de egress). */
+/**
+ * Día UTC (clave del techo de egress).
+ * @param {number} [now]
+ */
 export const utcDay = (now = Date.now()) => new Date(now).toISOString().slice(0, 10)
 
+/** @param {unknown} s */
 const esc = (s) => String(s ?? '')
   .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
   .replace(/"/g, '&quot;').replace(/'/g, '&#39;')
 
+/** @typedef {import('node:http').ServerResponse} Res */
+/** @typedef {import('node:http').IncomingMessage} Req */
+
+/** @type {(res: Res, code: number, body: string, extra?: Record<string, string>) => Res} */
 const text = (res, code, body, extra = {}) =>
   res.writeHead(code, { 'content-type': 'text/plain; charset=utf-8', ...extra }).end(body)
 
+/** @type {(res: Res, code: number, obj: object) => Res} */
 const json = (res, code, obj) =>
   res.writeHead(code, { 'content-type': 'application/json' }).end(JSON.stringify(obj))
 
@@ -120,10 +130,15 @@ export class RateLimiter {
   constructor (perMinute = DEFAULT_RATE_PER_MIN) {
     this.perMinute = perMinute
     this.window = 0
+    /** @type {Map<string, number>} */
     this.hits = new Map()
   }
 
-  /** @returns {boolean} true si la petición pasa. */
+  /**
+   * @param {string} ip
+   * @param {number} [now]
+   * @returns {boolean} true si la petición pasa.
+   */
   allow (ip, now = Date.now()) {
     if (!this.perMinute) return true
     const w = Math.floor(now / 60_000)
@@ -134,14 +149,21 @@ export class RateLimiter {
   }
 }
 
-/** IP del cliente, respetando un proxy inverso delante (nginx/Caddy/Cloudflare). */
+/**
+ * IP del cliente, respetando un proxy inverso delante (nginx/Caddy/Cloudflare).
+ * @param {Req} req
+ */
 export function clientIp (req) {
   const fwd = req.headers['x-forwarded-for']
   if (typeof fwd === 'string' && fwd) return fwd.split(',')[0].trim()
   return req.socket?.remoteAddress || '?'
 }
 
-/** Base pública absoluta (para las URLs de las etiquetas OG). */
+/**
+ * Base pública absoluta (para las URLs de las etiquetas OG).
+ * @param {Req} req
+ * @param {string | null | undefined} configured
+ */
 function baseUrl (req, configured) {
   if (configured) return configured.replace(/\/+$/, '')
   const proto = (req.headers['x-forwarded-proto'] || 'http').toString().split(',')[0].trim()
@@ -150,9 +172,11 @@ function baseUrl (req, configured) {
 }
 
 /** El host de una URL, o '' si no se puede leer. */
+/** @param {string} u */
 const hostOf = (u) => { try { return new URL(u).hostname } catch { return '' } }
 
 /** Un enlace legible: se cae el `https://` y la cola larga, no el destino. */
+/** @param {string} u */
 function shortLink (u) {
   try {
     const url = new URL(u)
@@ -161,6 +185,10 @@ function shortLink (u) {
   } catch { return u }
 }
 
+/**
+ * @param {{ meta?: string | null } | null | undefined} row
+ * @returns {{ title?: string, name?: string, description?: string, links?: unknown }}
+ */
 const parseMeta = (row) => {
   if (!row?.meta) return {}
   try { return JSON.parse(row.meta) || {} } catch { return {} }
@@ -176,6 +204,9 @@ const parseMeta = (row) => {
  * Si el contenido trae enlaces (`meta.links` — en un eco, la fuente de la que
  * habla), se pintan: sin ellos la tarjeta cuenta la noticia y esconde de dónde
  * salió.
+ * @param {{ cid: string, row: { size: number, mime: string, meta?: string | null }, base: string, appUrl: string,
+ *   owner: string | null, index: boolean, imageCid?: string | null, imageFallback?: string | null }} o
+ * @returns {string}
  */
 export function previewHtml ({ cid, row, base, appUrl, owner, index, imageCid = null, imageFallback = null }) {
   const m = parseMeta(row)
@@ -252,7 +283,7 @@ ${open ? `<a class="open" href="${esc(open)}">${esc(openLabel)}</a>` : ''}
  * @param {{
  *   maxBytes?: number, ratePerMin?: number, maxEgressBytes?: number,
  *   publicUrl?: string|null, appUrl?: string, index?: boolean, owner?: string|null,
- *   quiet?: boolean
+ *   imageFallback?: string|null, quiet?: boolean
  * }} [opts]
  */
 export function createPublicServer (node, opts = {}) {
@@ -264,7 +295,7 @@ export function createPublicServer (node, opts = {}) {
   /** ¿Queda techo de egress para hoy? */
   const egressLeft = () => {
     if (!maxEgressBytes) return Infinity
-    return maxEgressBytes - node.index.egressOn(utcDay())
+    return maxEgressBytes - node.idx.egressOn(utcDay())
   }
 
   const server = http.createServer(async (req, res) => {
@@ -274,20 +305,25 @@ export function createPublicServer (node, opts = {}) {
     } catch (err) {
       if (res.headersSent) { res.destroy(); return }
       text(res, 500, 'error\n')
-      if (!opts.quiet) console.error('[content:public]', err.message)
+      if (!opts.quiet) console.error('[content:public]', /** @type {Error} */ (err).message)
     }
   })
 
+  /**
+   * @param {Req} req
+   * @param {Res} res
+   */
   async function route (req, res) {
     if (req.method !== 'GET' && req.method !== 'HEAD') return text(res, 405, 'method not allowed\n')
-    const url = new URL(req.url, 'http://localhost')
+    // Un servidor http siempre trae `url` en la petición; el tipo lo deja opcional por los clientes.
+    const url = new URL(/** @type {string} */ (req.url), 'http://localhost')
     const [, top, cid] = url.pathname.split('/')
 
     if (url.pathname === '/robots.txt') {
       return text(res, 200, opts.index ? 'User-agent: *\nAllow: /p/\nDisallow: /c/\n' : 'User-agent: *\nDisallow: /\n')
     }
     if (url.pathname === '/health') {
-      const used = maxEgressBytes ? node.index.egressOn(utcDay()) : 0
+      const used = maxEgressBytes ? node.idx.egressOn(utcDay()) : 0
       return json(res, 200, { ok: true, egressToday: used, maxEgressBytes: maxEgressBytes || null })
     }
 
@@ -319,6 +355,7 @@ export function createPublicServer (node, opts = {}) {
         // No es un error del que pide: es la política del node. Se dice cuál es.
         return text(res, 413, 'this node only publishes previews; the content opens in the app\n')
       }
+      /** @type {Record<string, string | number>} */
       const headers = {
         'content-type': kind,
         etag: `"${cid}"`,
@@ -353,9 +390,9 @@ export function createPublicServer (node, opts = {}) {
       // Se contabiliza lo que de verdad sale por el socket, no lo que se prometió:
       // una descarga abortada a la mitad no debe gastar el techo entero.
       let sent = 0
-      res.on('close', () => { if (maxEgressBytes && sent) node.index.addEgress(sent, utcDay()) })
+      res.on('close', () => { if (maxEgressBytes && sent) node.idx.addEgress(sent, utcDay()) })
       const src = node.read(cid, range ?? undefined)
-      src.on('data', (c) => { sent += c.length })
+      src.on('data', (/** @type {Buffer} */ c) => { sent += c.length })
       await pipeline(src, res)
       return
     }
@@ -367,6 +404,8 @@ export function createPublicServer (node, opts = {}) {
    * Qué imagen lleva la tarjeta: el propio blob si es una imagen servible, y si
    * no su miniatura (`thumbnailCid`), que tiene que ser pública por su cuenta —
    * enlazar una miniatura no la vuelve pública, la publica su dueño.
+   * @param {string} cid
+   * @param {import('./types.js').BlobRow} row
    * @returns {Promise<string|null>}
    */
   async function pickImage (cid, row) {

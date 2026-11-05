@@ -18,6 +18,7 @@ import { S3BlobStore } from './blobstore-s3.js'
 import { S3Bucket } from './s3.js'
 
 /** Proveedores que hablan S3. Solo cambian el endpoint y algún valor por omisión. */
+/** @type {Readonly<Record<string, { region: string }>>} */
 export const PROVIDERS = Object.freeze({
   r2: { region: 'auto' },
   b2: { region: 'us-west-004' },
@@ -60,7 +61,7 @@ export function storageConfig (env = process.env) {
     region: env.CONTENT_S3_REGION || PROVIDERS[kind]?.region || 'us-east-1',
     endpoint: env.CONTENT_S3_ENDPOINT || '',
     priv: env.CONTENT_S3_BUCKET_PRIVATE || '',
-    pub: wantsPublic ? env.CONTENT_S3_BUCKET_PUBLIC : null,
+    pub: wantsPublic ? env.CONTENT_S3_BUCKET_PUBLIC || null : null,
     baseUrl: env.CONTENT_PUBLIC_BASE_URL || null,
     keyId: env.CONTENT_S3_KEY_ID || '',
     secret: env.CONTENT_S3_SECRET || '',
@@ -78,7 +79,9 @@ export function storageConfig (env = process.env) {
  * @returns {Promise<{ ok: boolean, fatal: string[], warn: string[] }>}
  */
 export async function checkBuckets (cfg, { priv, pub }, f = fetch) {
+  /** @type {string[]} */
   const fatal = []
+  /** @type {string[]} */
   const warn = []
 
   // 1. El mismo bucket para las dos cosas: lo privado acabaría en el que tiene dominio.
@@ -101,7 +104,7 @@ export async function checkBuckets (cfg, { priv, pub }, f = fetch) {
       fatal.push(`the private bucket "${cfg.priv}" answers without credentials (HTTP ${r.status}): it is open to the world`)
     }
   } catch (e) {
-    warn.push(`could not check whether the private bucket is closed: ${e.message}`)
+    warn.push(`could not check whether the private bucket is closed: ${/** @type {Error} */ (e).message}`)
   }
 
   // 3. El dominio del público tiene que servir DE VERDAD, y eso no se deduce mirando
@@ -125,7 +128,7 @@ export async function checkBuckets (cfg, { priv, pub }, f = fetch) {
         warn.push(`${cfg.baseUrl} does not serve what is in "${cfg.pub}" (HTTP ${r.status}): check that the domain is connected TO THE BUCKET in the dashboard`)
       }
     } catch (e) {
-      warn.push(`could not check the public path: ${e.message}`)
+      warn.push(`could not check the public path: ${/** @type {Error} */ (e).message}`)
     }
   }
 

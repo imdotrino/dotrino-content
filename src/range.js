@@ -1,4 +1,9 @@
-/** Parsea `Range: bytes=a-b|a-|-n` contra `size`. null = sin rango; false = inválido. */
+/**
+ * Parsea `Range: bytes=a-b|a-|-n` contra `size`. null = sin rango; false = inválido.
+ * @param {string | string[] | undefined | null} header
+ * @param {number} size
+ * @returns {import('./types.js').ByteRange | null | false}
+ */
 export function parseRange (header, size) {
   if (!header) return null
   const m = /^bytes=(\d*)-(\d*)$/.exec(String(header).trim())

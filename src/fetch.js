@@ -24,16 +24,18 @@ import { MSG, FETCH_MAX_BYTES } from '../lib/public.js'
 export { MSG, FETCH_MAX_BYTES }
 
 /**
- * @param {{ client: any, node: import('./node.js').ContentNode, ratePerMin?: number, quiet?: boolean }} opts
+ * @param {{ client: import('./types.js').ProxyLike, node: import('./node.js').ContentNode, ratePerMin?: number, quiet?: boolean }} opts
  *   client: el `WebSocketProxyClient` YA conectado del agente (no se abre otro).
  * @returns {{ close: () => void, served: () => number }}
  */
 export function startPublicFetch ({ client, node, ratePerMin = 60, quiet = false }) {
   if (!client || !node) throw new Error('startPublicFetch: client and node are required')
   /** token → { n, windowStart } */
+  /** @type {Map<string, { n: number, windowStart: number }>} */
   const buckets = new Map()
   let served = 0
 
+  /** @param {string} from */
   const allowed = (from) => {
     const now = Date.now()
     const b = buckets.get(from) || { n: 0, windowStart: now }
@@ -44,9 +46,15 @@ export function startPublicFetch ({ client, node, ratePerMin = 60, quiet = false
     return b.n <= ratePerMin
   }
 
-  const send = (to, obj) => { try { client.send(to, obj) } catch (e) { if (!quiet) console.error('[content] fetch reply:', e.message) } }
+  /** @type {(to: string, obj: object) => void} */
+  const send = (to, obj) => { try { client.send(to, obj) } catch (e) { if (!quiet) console.error('[content] fetch reply:', /** @type {Error} */ (e).message) } }
+  /** @type {(to: string, rid: unknown, code: string, error: string) => void} */
   const fail = (to, rid, code, error) => send(to, { type: MSG.FETCH_ERR, rid, code, error })
 
+  /**
+   * @param {string} from
+   * @param {any} p  lo que llegó por la red: se comprueba campo a campo
+   */
   const handle = async (from, p) => {
     const rid = typeof p.rid === 'string' ? p.rid : null
     if (!rid) return
@@ -57,6 +65,7 @@ export function startPublicFetch ({ client, node, ratePerMin = 60, quiet = false
     // Mismo 'not-found' para «no existe» y «no es público»: el mismo motivo que §7.2.
     if (!meta || meta.acl !== 'public' || meta.enc) return fail(from, rid, 'not-found', 'no such public cid')
     const url = node.publicUrl(p.cid)
+    /** @type {{ type: string, rid: string, cid: string, mime: string, size: number, url: string | null, data?: string }} */
     const out = { type: MSG.FETCH_OK, rid, cid: p.cid, mime: meta.mime, size: meta.size, url }
     // Con atajo, los bytes NO viajan por el proxio salvo que el que pide insista
     // (`full`): cargar por URL es gratis para el node y para la red, y la app ya
@@ -66,6 +75,7 @@ export function startPublicFetch ({ client, node, ratePerMin = 60, quiet = false
         if (!url) return fail(from, rid, 'too-large', `${meta.size} bytes do not fit in a message and this node has no public bucket`)
         // Cabe solo por URL: se contesta sin bytes y la app carga por ahí.
       } else {
+        /** @type {Buffer[]} */
         const chunks = []
         for await (const c of node.read(p.cid)) chunks.push(c)
         out.data = Buffer.concat(chunks).toString('base64')
@@ -77,7 +87,7 @@ export function startPublicFetch ({ client, node, ratePerMin = 60, quiet = false
 
   const off = client.on('message', (from, p) => {
     if (!p || p.type !== MSG.FETCH) return
-    handle(from, p).catch((e) => fail(from, p.rid, 'failed', e.message))
+    handle(from, p).catch((/** @type {Error} */ e) => fail(from, p.rid, 'failed', e.message))
   })
 
   return {

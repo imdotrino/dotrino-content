@@ -41,14 +41,15 @@ export const isLinked = (dir = linkDir()) => {
  * @param {{
  *   node?: import('./node.js').ContentNode,
  *   dir?: string, proxyUrl?: string, version?: string|null,
- *   client?: any, quiet?: boolean, onRevoked?: () => void, announce?: boolean
+ *   client?: object, quiet?: boolean, onRevoked?: () => void, announce?: boolean,
+ *   networkOverride?: string | null
  * }} opts
  *   client: transporte inyectado — SOLO para pruebas (bus en memoria). En
  *   producción lo levanta el middleware con el proxy del ecosistema.
  *   announce: publicarse en el canal del dueño para que un TERCERO con el enlace
  *   pueda encontrar este node (§3.1). Encendido por defecto; se apaga con `false`
  *   en un node que solo quieras usar desde tus propios aparatos.
- * @returns {Promise<{ machine: string, machineId: string, owner: string, close: () => void }>}
+ * @returns {Promise<import('@dotrino/remote-agent/agent').RemoteAgent & { owner: string, channels: () => string[], served: () => number }>}
  */
 export async function startContentAgent ({
   node, dir = linkDir(), proxyUrl, version = null, client, quiet = false, onRevoked, announce = true, networkOverride = null
@@ -69,7 +70,9 @@ export async function startContentAgent ({
   const dispatch = createOps(node, { owner, version, proxyUrl: nodeProxy })
 
   /** Por dónde va una sesión, mirado como mucho cada 5 s: una subida son miles de partes. */
+  /** @type {WeakMap<import('@dotrino/remote-agent/agent').AgentSession, { route: string, at: number }>} */
   const routes = new WeakMap()
+  /** @param {import('@dotrino/remote-agent/agent').AgentSession} session */
   async function routeOf (session) {
     const hit = routes.get(session)
     if (hit && Date.now() - hit.at < 5000) return hit.route
@@ -89,7 +92,7 @@ export async function startContentAgent ({
       session.on('message', (msg) => {
         dispatch(msg, { route: () => routeOf(session) })
           .then((reply) => session.send(reply))
-          .catch((e) => session.send({ rid: msg?.rid, ok: false, code: 'failed', error: e.message }))
+          .catch((/** @type {Error} */ e) => session.send({ rid: msg?.rid, ok: false, code: 'failed', error: e.message }))
       })
     }
   })

@@ -1,0 +1,16 @@
+{
+  "//": "La ventana de la biblioteca corre en el NAVEGADOR (la sirve src/gui.js): DOM y sin los tipos de Node.",
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "allowJs": true,
+    "checkJs": true,
+    "strict": true,
+    "skipLibCheck": true,
+    "noEmit": true,
+    "types": []
+  },
+  "include": ["app.js"]
+}
