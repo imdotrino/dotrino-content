@@ -92,6 +92,17 @@ jobs:
             npm publish ./*.tgz --access public
           fi
 
+      # Solo con tag: lanzado a mano no hay release a la que colgar nada (y colgaría lo de
+      # esta versión de la última que hubiera).
+      - if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            sbom-*.cdx.json
+            npm-integrity.json
+            *.tgz.sigstore.json
+          generate_release_notes: true
+
       # EL ESPEJO PROPIO (CONVENCIONES §15.2): el paquete, sus dependencias, la medida y la firma al
       # directorio estático de S3, para que el directorio de fuentes pueda mandar ahí si npm o
       # GitHub fallan. Credenciales por OIDC (rol dotrino-deps-publisher): ningún token guardado.
@@ -107,17 +118,6 @@ jobs:
             --lock mirror-deps/package-lock.json --release npm-integrity.json \
             $(for f in *.tgz.sigstore.json; do echo --release "$f"; done) \
             --upload s3://dotrino-deps ./*.tgz
-
-      # Solo con tag: lanzado a mano no hay release a la que colgar nada (y colgaría lo de
-      # esta versión de la última que hubiera).
-      - if: startsWith(github.ref, 'refs/tags/')
-        uses: softprops/action-gh-release@v2
-        with:
-          files: |
-            sbom-*.cdx.json
-            npm-integrity.json
-            *.tgz.sigstore.json
-          generate_release_notes: true
 
       # EL CLIENTE de las apps (`lib/`, @dotrino/content-client) sale en la misma tanda, y solo
       # si su versión no está ya en npm. Antes se publicaba a mano. Necesita la publicación de
